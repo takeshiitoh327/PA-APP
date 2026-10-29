@@ -9,8 +9,10 @@ import {
   addEntry,
   replaceEntry,
   setMood,
+  setWeather,
   formatDuration,
 } from "./logfmt.js";
+import { todayWeather, weatherLine, describe } from "./weather.js";
 import { summarize, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -36,10 +38,10 @@ function todayTaipei() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date());
 }
 
-function nowTaipei() {
+function nowTaipei(step = 5) {
   const t = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
   const [h, m] = t.split(":").map(Number);
-  const rounded = Math.floor(m / 5) * 5;
+  const rounded = Math.floor(m / step) * step;
   return `${String(h % 24).padStart(2, "0")}:${String(rounded).padStart(2, "0")}`;
 }
 
@@ -211,6 +213,13 @@ async function viewToday(date, focus) {
   const isToday = date === todayTaipei();
 
   view.innerHTML = `${dateNav(date, "today")}
+  ${
+    isToday
+      ? `<section class="card weather" id="weather-card"><p class="muted">取得天氣中…</p></section>`
+      : day && day.weather
+      ? `<section class="card weather"><p class="weather-saved">${esc(day.weather)}</p></section>`
+      : ""
+  }
   <section class="card" id="sec-log">
     <div class="card-head"><h2>今天完成的事</h2><a class="btn small" href="#/log/${date}">＋ 記錄</a></div>
     ${
@@ -235,6 +244,34 @@ async function viewToday(date, focus) {
     ${review ? renderMarkdown(review) : `<p class="muted">${isToday ? "晚上回顧還沒產生（每天 21:00）。" : "這天沒有晚上回顧。"}</p>`}
   </section>`;
   if (focus) document.getElementById(`sec-${focus}`)?.scrollIntoView({ block: "start" });
+  if (isToday) loadWeather(date, day);
+}
+
+// Shows today's weather and, the first time each day, writes it to the log.
+async function loadWeather(date, day) {
+  const card = document.getElementById("weather-card");
+  try {
+    const w = await todayWeather();
+    if (!card.isConnected) return;
+    const today = describe(w.code);
+    const now = describe(w.nowCode);
+    card.innerHTML = `<div class="weather-row">
+      <div class="weather-icon" aria-hidden="true">${now.icon}</div>
+      <div class="weather-main"><strong>${w.now}°C</strong><span>${esc(w.place)}・現在${esc(now.text)}</span></div>
+      <div class="weather-day"><span>${today.icon} ${esc(today.text)}</span><span>${w.min}–${w.max}°C</span>${
+        w.rain !== null && w.rain !== undefined ? `<span>降雨 ${w.rain}%</span>` : ""
+      }</div>
+    </div>${w.rain >= 50 ? `<p class="weather-tip">☂️ 今天降雨機率高，記得帶傘</p>` : ""}`;
+    if (!day || !day.weather) {
+      await writeLog(date, (text) => setWeather(text, date, weatherLine(w, nowTaipei(1))), `Weather: ${date}`);
+    }
+  } catch (e) {
+    if (card.isConnected) {
+      card.innerHTML = `<p class="muted">天氣：${esc(e.message || "無法取得")}${
+        /權限/.test(e.message) ? "（手機設定 → 應用程式 → Chrome → 權限 → 位置，允許後重新整理）" : ""
+      }</p>`;
+    }
+  }
 }
 
 async function viewLog(date) {

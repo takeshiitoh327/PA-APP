@@ -286,3 +286,12 @@ summary { cursor: pointer; font-size: .9rem; }
   position: fixed; z-index: 10; max-width: 260px; padding: 6px 10px; border-radius: 8px;
   background: var(--text); color: var(--bg); font-size: .8rem; pointer-events: none;
 }
+
+.weather .weather-row { display: flex; align-items: center; gap: 12px; }
+.weather-icon { font-size: 2.2rem; line-height: 1; }
+.weather-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.weather-main strong { font-size: 1.6rem; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.weather-main span { font-size: .85rem; color: var(--text-2); }
+.weather-day { display: flex; flex-direction: column; align-items: flex-end; font-size: .85rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.weather-tip { margin: 10px 0 0; font-size: .9rem; }
+.weather-saved { margin: 0; color: var(--text-2); font-size: .92rem; }
