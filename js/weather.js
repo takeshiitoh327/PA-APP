@@ -3,6 +3,32 @@
 // Weather: Open-Meteo (no key). Place name: OpenStreetMap Nominatim.
 
 const CACHE_KEY = "pa-app.weather";
+const PLACE_KEY = "pa-app.weather-place";
+
+// Used when the phone's location is unavailable, or always when "fixed" is on.
+export const CITIES = [
+  ["基隆市", 25.13, 121.74], ["臺北市", 25.04, 121.56], ["新北市", 25.01, 121.47], ["桃園市", 24.99, 121.3],
+  ["新竹市", 24.81, 120.97], ["新竹縣", 24.84, 121.01], ["苗栗縣", 24.56, 120.82], ["臺中市", 24.15, 120.67],
+  ["彰化縣", 24.08, 120.54], ["南投縣", 23.91, 120.68], ["雲林縣", 23.71, 120.43], ["嘉義市", 23.48, 120.45],
+  ["嘉義縣", 23.46, 120.25], ["臺南市", 22.99, 120.21], ["高雄市", 22.63, 120.3], ["屏東縣", 22.67, 120.49],
+  ["宜蘭縣", 24.75, 121.75], ["花蓮縣", 23.99, 121.6], ["臺東縣", 22.76, 121.15], ["澎湖縣", 23.57, 119.58],
+  ["金門縣", 24.43, 118.32], ["連江縣", 26.16, 119.95],
+];
+
+export function placeSetting() {
+  try {
+    return { city: "", fixed: false, ...JSON.parse(localStorage.getItem(PLACE_KEY) || "{}") };
+  } catch {
+    return { city: "", fixed: false };
+  }
+}
+
+export function savePlaceSetting(setting) {
+  try {
+    localStorage.setItem(PLACE_KEY, JSON.stringify(setting));
+    sessionStorage.removeItem(CACHE_KEY);
+  } catch {}
+}
 const CACHE_MINUTES = 30;
 
 // WMO weather codes used by Open-Meteo.
@@ -95,12 +121,26 @@ export async function locationPermission() {
   }
 }
 
-export async function todayWeather() {
+// useCity: skip the phone's location and use the city from the settings.
+export async function todayWeather({ useCity = false } = {}) {
   const hit = cached();
   if (hit) return hit;
-  const pos = await position();
-  const [w, place] = await Promise.all([forecast(pos), placeName(pos)]);
-  const data = { ...w, place };
+  const { city, fixed } = placeSetting();
+  const entry = CITIES.find(([name]) => name === city);
+  let data;
+  if (entry && (useCity || fixed)) {
+    data = { ...(await forecast({ lat: entry[1], lon: entry[2] })), place: entry[0] };
+  } else {
+    let pos;
+    try {
+      pos = await position();
+    } catch (e) {
+      if (!entry) throw e;
+      return todayWeather({ useCity: true });
+    }
+    const [w, place] = await Promise.all([forecast(pos), placeName(pos)]);
+    data = { ...w, place };
+  }
   try {
     sessionStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), data }));
   } catch {}

@@ -1,7 +1,7 @@
 // Caches the app shell only. GitHub API responses (personal data) are never
 // cached here: requests to other origins pass straight through.
 
-const VERSION = "pa-app-v9";
+const VERSION = "pa-app-v10";
 const SHELL = [
   "./",
   "index.html",

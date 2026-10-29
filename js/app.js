@@ -12,7 +12,7 @@ import {
   setWeather,
   formatDuration,
 } from "./logfmt.js";
-import { todayWeather, weatherLine, describe, locationPermission } from "./weather.js";
+import { todayWeather, weatherLine, describe, locationPermission, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 import { summarize, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -250,7 +250,9 @@ async function viewToday(date, focus) {
 // Shows today's weather and, the first time each day, writes it to the log.
 async function loadWeather(date, day, tapped = false) {
   const card = document.getElementById("weather-card");
-  if (!tapped && (await locationPermission()) !== "granted") {
+  const place = placeSetting();
+  const permission = place.fixed && place.city ? "granted" : await locationPermission();
+  if (!tapped && permission === "prompt") {
     card.innerHTML = `<div class="weather-ask"><p class="muted">按一下取得目前位置的天氣，之後每天打開會自動顯示。</p>
       <button type="button" class="btn primary" id="weather-ask">📍 取得今天天氣</button></div>`;
     document.getElementById("weather-ask").addEventListener("click", () => {
@@ -260,7 +262,7 @@ async function loadWeather(date, day, tapped = false) {
     return;
   }
   try {
-    const w = await todayWeather();
+    const w = await todayWeather({ useCity: permission === "denied" && !tapped });
     if (!card.isConnected) return;
     const today = describe(w.code);
     const now = describe(w.nowCode);
@@ -277,7 +279,7 @@ async function loadWeather(date, day, tapped = false) {
   } catch (e) {
     if (card.isConnected) {
       card.innerHTML = `<p class="muted">天氣：${esc(e.message || "無法取得")}${
-        /權限/.test(e.message) ? "（Chrome 網址列左邊的設定圖示 → 權限 → 位置，或手機設定 → 應用程式 → Chrome → 權限 → 位置）" : ""
+        /權限/.test(e.message) ? "。可以到設定 → 天氣地點選一個城市，定位不能用時改顯示那裡的天氣。" : ""
       }</p><div class="form-actions"><button type="button" class="btn small" id="weather-retry">重試</button></div>`;
       document.getElementById("weather-retry").addEventListener("click", () => {
         card.innerHTML = `<p class="muted">取得天氣中…</p>`;
@@ -716,6 +718,15 @@ async function viewSettings(_, firstRun) {
       <p id="test-result" class="muted"></p>
     </form>
   </section>
+  <section class="card" id="place-card">
+    <h2>天氣地點</h2>
+    <label>城市（手機定位不能用時使用）
+      <select id="place-city"><option value="">不設定</option>${CITIES.map(
+        ([name]) => `<option value="${name}" ${placeSetting().city === name ? "selected" : ""}>${name}</option>`
+      ).join("")}</select>
+    </label>
+    <label class="check"><input type="checkbox" id="place-fixed" ${placeSetting().fixed ? "checked" : ""}> 一律使用這個城市（不用手機定位）</label>
+  </section>
   ${settings.token ? `<section class="card" id="push-card">
     <h2>手機通知</h2>
     <p class="muted" id="push-status">檢查中…</p>
@@ -761,6 +772,12 @@ async function viewSettings(_, firstRun) {
     }
   });
   if (settings.token) renderPush();
+  const savePlace = () => {
+    savePlaceSetting({ city: document.getElementById("place-city").value, fixed: document.getElementById("place-fixed").checked });
+    toast("天氣地點已儲存");
+  };
+  document.getElementById("place-city").addEventListener("change", savePlace);
+  document.getElementById("place-fixed").addEventListener("change", savePlace);
   document.getElementById("clear-btn")?.addEventListener("click", () => {
     if (!confirm("清除這支手機上的 token？")) return;
     clearSettings();
