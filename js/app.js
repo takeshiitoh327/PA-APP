@@ -729,10 +729,12 @@ async function renderPush() {
     actions.innerHTML = "";
     return;
   }
-  const sub = await currentSubscription().catch(() => null);
+  const { sub, stale } = await currentSubscription().catch(() => ({ sub: null, stale: false }));
   const denied = Notification.permission === "denied";
   status.textContent = sub
     ? "✓ 已開啟。晨報（08:00）和晚上回顧（21:00）會從這個 app 跳通知。"
+    : stale
+    ? "通知金鑰已更新，請按「開啟通知」重新開啟一次。"
     : denied
     ? "通知權限被封鎖了。請到手機設定 → 應用程式 → Chrome → 通知，允許後再回來開啟。"
     : "還沒開啟。開啟後，晨報和晚上回顧會直接從這個 app 跳通知。";

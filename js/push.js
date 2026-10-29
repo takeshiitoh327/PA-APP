@@ -4,7 +4,7 @@
 // lives only in the cloud environment.
 
 export const VAPID_PUBLIC_KEY =
-  "BGQ6i0Wm8FVJ2JXZaOmGEKGVa6Sr3luecHyasGfsbI_M2VcdZGh1xkPhFmhO62ZCG9BZzg-7tbxK_lTsQRLdoRs";
+  "BL5kMgWm6VEtc0PPvLb6faE93pdj2rnx-BCHkm7ZgmBIK6IYchUEFMvczC85lYeDvgrhCGby4ytAtDytCcjd_TQ";
 const PATH = "config/push-subscriptions.json";
 
 export function pushSupported() {
@@ -23,10 +23,23 @@ function deviceName() {
   return model && model[1] !== "K" ? `${os} ${model[1]}` : os;
 }
 
+// A subscription made with an older VAPID key can no longer receive pushes.
+function usesCurrentKey(sub) {
+  const key = sub.options && sub.options.applicationServerKey;
+  if (!key) return true;
+  const a = new Uint8Array(key);
+  const b = keyBytes(VAPID_PUBLIC_KEY);
+  return a.length === b.length && a.every((x, i) => x === b[i]);
+}
+
+// Returns { sub, stale }: stale is true when the phone holds a subscription
+// for an old key and needs to subscribe again.
 export async function currentSubscription() {
-  if (!pushSupported()) return null;
+  if (!pushSupported()) return { sub: null, stale: false };
   const reg = await navigator.serviceWorker.ready;
-  return reg.pushManager.getSubscription();
+  const sub = await reg.pushManager.getSubscription();
+  if (sub && !usesCurrentKey(sub)) return { sub: null, stale: true };
+  return { sub, stale: false };
 }
 
 function upsert(text, sub) {
@@ -47,13 +60,20 @@ export async function enablePush(repo) {
   if (permission !== "granted") throw new Error("通知權限被拒絕。請到手機設定 → 應用程式 → Chrome（或助理）→ 通知，允許後再試");
   const reg = await navigator.serviceWorker.ready;
   let sub = await reg.pushManager.getSubscription();
+  let oldEndpoint = null;
+  if (sub && !usesCurrentKey(sub)) {
+    oldEndpoint = sub.endpoint;
+    await sub.unsubscribe();
+    sub = null;
+  }
   if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(VAPID_PUBLIC_KEY) });
-  await repo.updateFile(PATH, (text) => upsert(text, sub), "Add push subscription");
+  await repo.updateFile(PATH, (text) => upsert(oldEndpoint ? remove(text, oldEndpoint) : text, sub), "Add push subscription");
   return sub;
 }
 
 export async function disablePush(repo) {
-  const sub = await currentSubscription();
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription();
   if (!sub) return;
   const endpoint = sub.endpoint;
   await sub.unsubscribe();
