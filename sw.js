@@ -1,7 +1,7 @@
 // Caches the app shell only. GitHub API responses (personal data) are never
 // cached here: requests to other origins pass straight through.
 
-const VERSION = "pa-app-v4";
+const VERSION = "pa-app-v5";
 const SHELL = [
   "./",
   "index.html",
@@ -11,6 +11,8 @@ const SHELL = [
   "js/gh.js",
   "js/logfmt.js",
   "js/stats.js",
+  "js/push.js",
+  "icons/badge-96.png",
   "vendor/marked.min.js",
   "vendor/purify.min.js",
   "icons/icon.svg",
@@ -45,5 +47,41 @@ self.addEventListener("fetch", (event) => {
         return res;
       })
       .catch(() => caches.match(event.request, { ignoreSearch: true }).then((r) => r || caches.match("index.html")))
+  );
+});
+
+// Alerts sent by the scheduled brief and review (scripts/web_push.py).
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { title: "個人助理", body: event.data ? event.data.text() : "" };
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title || "個人助理", {
+      body: data.body || "",
+      icon: "icons/icon-192.png",
+      badge: "icons/badge-96.png",
+      tag: data.tag || "pa-alert",
+      renotify: true,
+      data: { url: data.url || "./#/today" },
+    })
+  );
+});
+
+// Open the linked page, reusing an open window of the app when there is one.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = new URL(event.notification.data?.url || "./#/today", self.registration.scope).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if (client.url.startsWith(self.registration.scope) && "focus" in client) {
+          return client.navigate(url).then((c) => (c || client).focus());
+        }
+      }
+      return self.clients.openWindow(url);
+    })
   );
 });

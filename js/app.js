@@ -12,6 +12,7 @@ import {
   formatDuration,
 } from "./logfmt.js";
 import { summarize, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
+import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
 const TZ = "Asia/Taipei";
 const view = document.getElementById("view");
@@ -665,6 +666,11 @@ async function viewSettings(_, firstRun) {
       <p id="test-result" class="muted"></p>
     </form>
   </section>
+  ${settings.token ? `<section class="card" id="push-card">
+    <h2>手機通知</h2>
+    <p class="muted" id="push-status">檢查中…</p>
+    <div class="form-actions" id="push-actions"></div>
+  </section>` : ""}
   <section class="card md">
     <h2>如何建立 token</h2>
     <ol>
@@ -704,6 +710,7 @@ async function viewSettings(_, firstRun) {
       result.textContent = `✗ ${errorText(e)}`;
     }
   });
+  if (settings.token) renderPush();
   document.getElementById("clear-btn")?.addEventListener("click", () => {
     if (!confirm("清除這支手機上的 token？")) return;
     clearSettings();
@@ -711,6 +718,42 @@ async function viewSettings(_, firstRun) {
     repo = new Repo(settings);
     viewSettings(null, true);
   });
+}
+
+async function renderPush() {
+  const status = document.getElementById("push-status");
+  const actions = document.getElementById("push-actions");
+  if (!status) return;
+  if (!pushSupported()) {
+    status.textContent = "這個瀏覽器不支援推播通知。請用 Chrome 打開，並加到主畫面。";
+    actions.innerHTML = "";
+    return;
+  }
+  const sub = await currentSubscription().catch(() => null);
+  const denied = Notification.permission === "denied";
+  status.textContent = sub
+    ? "✓ 已開啟。晨報（08:00）和晚上回顧（21:00）會從這個 app 跳通知。"
+    : denied
+    ? "通知權限被封鎖了。請到手機設定 → 應用程式 → Chrome → 通知，允許後再回來開啟。"
+    : "還沒開啟。開啟後，晨報和晚上回顧會直接從這個 app 跳通知。";
+  actions.innerHTML = sub
+    ? `<button type="button" class="btn ghost" id="push-test">本機測試</button><button type="button" class="btn ghost danger" id="push-off">關閉通知</button>`
+    : `<button type="button" class="btn primary" id="push-on" ${denied ? "disabled" : ""}>開啟通知</button>`;
+  const run = async (btn, fn, done) => {
+    btn.disabled = true;
+    try {
+      await fn();
+      if (done) toast(done);
+    } catch (e) {
+      toast(errorText(e), true);
+    }
+    renderPush();
+  };
+  document.getElementById("push-on")?.addEventListener("click", (ev) => run(ev.target, () => enablePush(repo), "通知已開啟"));
+  document.getElementById("push-off")?.addEventListener("click", (ev) => {
+    if (confirm("關閉這支手機的通知？")) run(ev.target, () => disablePush(repo), "通知已關閉");
+  });
+  document.getElementById("push-test")?.addEventListener("click", (ev) => run(ev.target, showLocalTest));
 }
 
 // ---------- boot ----------
