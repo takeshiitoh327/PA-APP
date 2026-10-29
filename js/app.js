@@ -165,7 +165,7 @@ function entryRow(e, { actions = false } = {}) {
   const metrics = Object.entries(e.metrics);
   const status = e.category === "plan" ? (e.status === "done" ? "✓ 完成" : e.status === "dropped" ? "✗ 取消" : e.due ? `到期 ${e.due.slice(5).replace("-", "/")}` : "") : "";
   return `<li class="entry ${e.category === "plan" ? `plan ${e.status}` : ""}">
-    <div class="entry-time">${e.time}${end ? `<span>–${end}</span>` : ""}</div>
+    <div class="entry-time">${e.time}${end ? `<i class="time-line" aria-hidden="true"></i><span><span class="sr-only">至 </span>${end}</span>` : ""}</div>
     <div class="entry-body">
       <div class="entry-text">${esc(e.plain)}</div>
       <div class="entry-meta">
