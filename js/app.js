@@ -268,8 +268,12 @@ async function loadWeather(date, day) {
   } catch (e) {
     if (card.isConnected) {
       card.innerHTML = `<p class="muted">天氣：${esc(e.message || "無法取得")}${
-        /權限/.test(e.message) ? "（手機設定 → 應用程式 → Chrome → 權限 → 位置，允許後重新整理）" : ""
-      }</p>`;
+        /權限/.test(e.message) ? "（Chrome 網址列左邊的設定圖示 → 權限 → 位置，或手機設定 → 應用程式 → Chrome → 權限 → 位置）" : ""
+      }</p><div class="form-actions"><button type="button" class="btn small" id="weather-retry">重試</button></div>`;
+      document.getElementById("weather-retry").addEventListener("click", () => {
+        card.innerHTML = `<p class="muted">取得天氣中…</p>`;
+        loadWeather(date, day);
+      });
     }
   }
 }

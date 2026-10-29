@@ -31,7 +31,12 @@ function position() {
     if (!("geolocation" in navigator)) return reject(new Error("這支手機不支援定位"));
     navigator.geolocation.getCurrentPosition(
       (p) => resolve({ lat: Math.round(p.coords.latitude * 100) / 100, lon: Math.round(p.coords.longitude * 100) / 100 }),
-      (e) => reject(new Error(e.code === 1 ? "沒有定位權限" : "取得位置失敗")),
+      (e) =>
+        reject(
+          new Error(
+            e.code === 1 ? "沒有定位權限" : e.code === 3 ? "取得位置逾時（手機的「位置」功能有開嗎？）" : "取得位置失敗（手機的「位置」功能有開嗎？）"
+          )
+        ),
       { enableHighAccuracy: false, timeout: 15000, maximumAge: 10 * 60 * 1000 }
     );
   });
