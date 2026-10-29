@@ -1,6 +1,6 @@
 // Web Push subscription for the morning brief and evening review alerts.
 // The subscription is saved in the private repo, where the scheduled runs
-// read it (scripts/web_push.py in personal-assistant). The private VAPID key
+// read it (scripts/web_push.mjs in personal-assistant). The private VAPID key
 // lives only in the cloud environment.
 
 export const VAPID_PUBLIC_KEY =

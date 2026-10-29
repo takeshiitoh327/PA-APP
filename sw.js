@@ -50,7 +50,7 @@ self.addEventListener("fetch", (event) => {
   );
 });
 
-// Alerts sent by the scheduled brief and review (scripts/web_push.py).
+// Alerts sent by the scheduled brief and review (scripts/web_push.mjs).
 self.addEventListener("push", (event) => {
   let data = {};
   try {
