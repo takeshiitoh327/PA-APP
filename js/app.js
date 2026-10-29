@@ -12,7 +12,7 @@ import {
   setWeather,
   formatDuration,
 } from "./logfmt.js";
-import { todayWeather, weatherLine, describe } from "./weather.js";
+import { todayWeather, weatherLine, describe, locationPermission } from "./weather.js";
 import { summarize, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -248,8 +248,17 @@ async function viewToday(date, focus) {
 }
 
 // Shows today's weather and, the first time each day, writes it to the log.
-async function loadWeather(date, day) {
+async function loadWeather(date, day, tapped = false) {
   const card = document.getElementById("weather-card");
+  if (!tapped && (await locationPermission()) !== "granted") {
+    card.innerHTML = `<div class="weather-ask"><p class="muted">按一下取得目前位置的天氣，之後每天打開會自動顯示。</p>
+      <button type="button" class="btn primary" id="weather-ask">📍 取得今天天氣</button></div>`;
+    document.getElementById("weather-ask").addEventListener("click", () => {
+      card.innerHTML = `<p class="muted">取得天氣中…</p>`;
+      loadWeather(date, day, true);
+    });
+    return;
+  }
   try {
     const w = await todayWeather();
     if (!card.isConnected) return;
@@ -272,7 +281,7 @@ async function loadWeather(date, day) {
       }</p><div class="form-actions"><button type="button" class="btn small" id="weather-retry">重試</button></div>`;
       document.getElementById("weather-retry").addEventListener("click", () => {
         card.innerHTML = `<p class="muted">取得天氣中…</p>`;
-        loadWeather(date, day);
+        loadWeather(date, day, true);
       });
     }
   }

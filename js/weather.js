@@ -85,6 +85,16 @@ function cached() {
   }
 }
 
+// "granted", "prompt" or "denied". Chrome quietly blocks location requests
+// that do not come from a tap, so "prompt" needs a button first.
+export async function locationPermission() {
+  try {
+    return (await navigator.permissions.query({ name: "geolocation" })).state;
+  } catch {
+    return "prompt";
+  }
+}
+
 export async function todayWeather() {
   const hit = cached();
   if (hit) return hit;
