@@ -85,12 +85,12 @@
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; font-size: 19px; }
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 16px/1.55 system-ui, -apple-system, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  font: 1rem/1.55 system-ui, -apple-system, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
   padding-bottom: calc(72px + env(safe-area-inset-bottom));
 }
 a { color: var(--accent); }
@@ -177,7 +177,7 @@ form label { display: block; margin: 10px 0 0; font-size: .85rem; color: var(--t
 input, textarea, select {
   display: block; width: 100%; margin-top: 4px; padding: 10px 12px;
   border: 1px solid var(--border); border-radius: 10px;
-  background: var(--bg); color: var(--text); font: inherit; font-size: 16px;
+  background: var(--bg); color: var(--text); font: inherit; font-size: 1rem;
 }
 input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 textarea { resize: vertical; }
@@ -210,7 +210,7 @@ summary { cursor: pointer; font-size: .9rem; }
 
 .segmented { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--surface-2); }
 .segmented button {
-  flex: 1; min-height: 36px; border: 0; border-radius: 9px; background: transparent;
+  flex: 1; min-height: 40px; padding: 0 2px; border: 0; border-radius: 9px; background: transparent;
   color: var(--text-2); font: inherit; font-size: .9rem; cursor: pointer;
 }
 .segmented button.on { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
@@ -234,7 +234,7 @@ summary { cursor: pointer; font-size: .9rem; }
 
 .chart-scroll, .heat-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .chart { display: block; }
-.chart .axis { fill: var(--muted); font-size: 10px; }
+.chart .axis { fill: var(--muted); font-size: 12px; }
 .chart .grid { stroke: var(--grid); stroke-width: 1; }
 .chart .hit { fill: transparent; cursor: pointer; }
 .heat.l0 { fill: var(--heat-0); background: var(--heat-0); }
