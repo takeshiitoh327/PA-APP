@@ -1,7 +1,7 @@
 // Caches the app shell only. GitHub API responses (personal data) are never
 // cached here: requests to other origins pass straight through.
 
-const VERSION = "pa-app-v11";
+const VERSION = "pa-app-v12";
 const SHELL = [
   "./",
   "index.html",
@@ -39,7 +39,7 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (event.request.method !== "GET" || url.origin !== self.location.origin) return;
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, { cache: "no-cache" })
       .then((res) => {
         if (res.ok) {
           const copy = res.clone();
