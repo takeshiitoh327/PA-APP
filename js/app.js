@@ -12,9 +12,9 @@ import {
   setWeather,
   formatDuration,
 } from "./logfmt.js";
-import { todayWeather, weatherLine, describe, locationPermission, diagnose, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
+import { todayWeather, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
-const APP_VERSION = "v13";
+const APP_VERSION = "v14";
 import { summarize, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -258,6 +258,7 @@ async function loadWeather(date, day, tapped = false) {
     card.innerHTML = `<div class="weather-ask"><p class="muted">按一下取得目前位置的天氣，之後每天打開會自動顯示。</p>
       <button type="button" class="btn primary" id="weather-ask">📍 取得今天天氣</button></div>`;
     document.getElementById("weather-ask").addEventListener("click", () => {
+      requestPositionNow();
       card.innerHTML = `<p class="muted">取得天氣中…</p>`;
       loadWeather(date, day, true);
     });
@@ -285,6 +286,7 @@ async function loadWeather(date, day, tapped = false) {
         /權限/.test(e.message) ? "。可以到設定 → 天氣地點選一個城市，定位不能用時改顯示那裡的天氣。" : ""
       }</p><p class="muted diag">${APP_VERSION}・${esc(diagnose())}・權限狀態 ${esc(state)}</p><div class="form-actions"><button type="button" class="btn small" id="weather-retry">重試</button></div>`;
       document.getElementById("weather-retry").addEventListener("click", () => {
+        requestPositionNow();
         card.innerHTML = `<p class="muted">取得天氣中…</p>`;
         loadWeather(date, day, true);
       });

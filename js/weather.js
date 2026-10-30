@@ -62,7 +62,21 @@ export function diagnose() {
   return "無法判斷";
 }
 
+// A position request started straight from a tap. Chrome only shows its
+// location prompt while the tap is fresh, so it must not wait on anything.
+let pending = null;
+export function requestPositionNow() {
+  pending = requestPosition();
+  pending.catch(() => {});
+}
+
 function position() {
+  const p = pending || requestPosition();
+  pending = null;
+  return p;
+}
+
+function requestPosition() {
   return new Promise((resolve, reject) => {
     if (!("geolocation" in navigator)) return reject(new Error("這支手機不支援定位"));
     navigator.geolocation.getCurrentPosition(
