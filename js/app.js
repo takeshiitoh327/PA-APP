@@ -12,7 +12,9 @@ import {
   setWeather,
   formatDuration,
 } from "./logfmt.js";
-import { todayWeather, weatherLine, describe, locationPermission, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
+import { todayWeather, weatherLine, describe, locationPermission, diagnose, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
+
+const APP_VERSION = "v13";
 import { summarize, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -278,9 +280,10 @@ async function loadWeather(date, day, tapped = false) {
     }
   } catch (e) {
     if (card.isConnected) {
+      const state = await locationPermission();
       card.innerHTML = `<p class="muted">天氣：${esc(e.message || "無法取得")}${
         /權限/.test(e.message) ? "。可以到設定 → 天氣地點選一個城市，定位不能用時改顯示那裡的天氣。" : ""
-      }</p><div class="form-actions"><button type="button" class="btn small" id="weather-retry">重試</button></div>`;
+      }</p><p class="muted diag">${APP_VERSION}・${esc(diagnose())}・權限狀態 ${esc(state)}</p><div class="form-actions"><button type="button" class="btn small" id="weather-retry">重試</button></div>`;
       document.getElementById("weather-retry").addEventListener("click", () => {
         card.innerHTML = `<p class="muted">取得天氣中…</p>`;
         loadWeather(date, day, true);
@@ -732,6 +735,7 @@ async function viewSettings(_, firstRun) {
     <p class="muted" id="push-status">檢查中…</p>
     <div class="form-actions" id="push-actions"></div>
   </section>` : ""}
+  <p class="muted diag">app 版本 ${APP_VERSION}</p>
   <section class="card md">
     <h2>如何建立 token</h2>
     <ol>

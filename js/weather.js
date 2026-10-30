@@ -54,7 +54,7 @@ export function describe(code) {
 
 // Tells whether the page itself may use location (a server header can turn
 // it off) as opposed to the browser or phone denying it.
-function diagnose() {
+export function diagnose() {
   try {
     const fp = document.featurePolicy || document.permissionsPolicy;
     if (fp && typeof fp.allowsFeature === "function") return fp.allowsFeature("geolocation") ? "網站允許定位" : "網站主機禁止定位";
