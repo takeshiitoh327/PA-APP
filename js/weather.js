@@ -52,6 +52,16 @@ export function describe(code) {
   return hit ? { icon: hit[1], text: hit[2] } : { icon: "🌡️", text: "—" };
 }
 
+// Tells whether the page itself may use location (a server header can turn
+// it off) as opposed to the browser or phone denying it.
+function diagnose() {
+  try {
+    const fp = document.featurePolicy || document.permissionsPolicy;
+    if (fp && typeof fp.allowsFeature === "function") return fp.allowsFeature("geolocation") ? "網站允許定位" : "網站主機禁止定位";
+  } catch {}
+  return "無法判斷";
+}
+
 function position() {
   return new Promise((resolve, reject) => {
     if (!("geolocation" in navigator)) return reject(new Error("這支手機不支援定位"));
@@ -60,7 +70,11 @@ function position() {
       (e) =>
         reject(
           new Error(
-            e.code === 1 ? "沒有定位權限" : e.code === 3 ? "取得位置逾時（手機的「位置」功能有開嗎？）" : "取得位置失敗（手機的「位置」功能有開嗎？）"
+            e.code === 1
+              ? `沒有定位權限（診斷：${diagnose()}）`
+              : e.code === 3
+              ? "取得位置逾時（手機的「位置」功能有開嗎？）"
+              : "取得位置失敗（手機的「位置」功能有開嗎？）"
           )
         ),
       { enableHighAccuracy: false, timeout: 15000, maximumAge: 10 * 60 * 1000 }
