@@ -62,10 +62,25 @@ export function summarize(days, entries, start, end, today) {
   const tagCount = {};
   const tagHours = {};
   const hoursByDay = {};
+  const sleeps = [];
+  const exercise = { sessions: 0, hours: 0, byType: {} };
   for (const e of sel) {
+    if (e.category === "sleep") {
+      if (e.hours) sleeps.push(e);
+      counts.sleep = (counts.sleep || 0) + 1;
+      continue;
+    }
+    if (e.category === "exercise") {
+      exercise.sessions++;
+      exercise.hours += e.hours || 0;
+      const type = e.tags.find((t) => !["done", "dropped", "moved"].includes(t)) || "other";
+      exercise.byType[type] = exercise.byType[type] || { n: 0, h: 0 };
+      exercise.byType[type].n++;
+      exercise.byType[type].h += e.hours || 0;
+    }
     counts[e.category] = (counts[e.category] || 0) + 1;
     for (const [k, v] of Object.entries(e.metrics)) metrics[k] = (metrics[k] || 0) + v;
-    for (const t of e.tags) {
+    for (const t of e.category === "exercise" ? [] : e.tags) {
       if (t === "done" || t === "dropped" || t === "moved") continue;
       tagCount[t] = (tagCount[t] || 0) + 1;
       tagHours[t] = (tagHours[t] || 0) + (e.hours || 0);
@@ -96,6 +111,14 @@ export function summarize(days, entries, start, end, today) {
     moodAvg: moods.length ? moods.reduce((a, d) => a + d.mood, 0) / moods.length : null,
     moodDays: moods.length,
     hoursByDay,
+    sleep: sleeps.length
+      ? {
+          nights: sleeps.length,
+          avg: sleeps.reduce((a, e) => a + e.hours, 0) / sleeps.length,
+          avgBedtime: avgClock(sleeps.map((e) => e.time)),
+        }
+      : null,
+    exercise,
     commitments: {
       due: plans.length,
       done: plans.filter((e) => e.status === "done").length,
@@ -103,6 +126,16 @@ export function summarize(days, entries, start, end, today) {
       open: plans.filter((e) => e.status === "open" && e.due <= today).length,
     },
   };
+}
+
+// Average of clock times around midnight: 23:30 and 00:30 average to 00:00.
+function avgClock(times) {
+  const mins = times.map((t) => {
+    const [h, m] = t.split(":").map(Number);
+    return (h < 12 ? h + 24 : h) * 60 + m;
+  });
+  const avg = Math.round(mins.reduce((a, b) => a + b, 0) / mins.length) % (24 * 60);
+  return `${String(Math.floor(avg / 60)).padStart(2, "0")}:${String(avg % 60).padStart(2, "0")}`;
 }
 
 export function openCommitments(entries, by) {

@@ -15,8 +15,27 @@ export const CATEGORIES = [
   ["finance", "財務"],
   ["errand", "雜事"],
   ["idea", "想法"],
+  ["exercise", "運動"],
+  ["sleep", "睡眠"],
   ["plan", "計畫"],
 ];
+
+export const EXERCISES = [
+  ["run", "跑步"],
+  ["walk", "走路"],
+  ["bike", "騎車"],
+  ["gym", "重訓"],
+  ["swim", "游泳"],
+  ["ball", "球類"],
+  ["stretch", "伸展"],
+  ["other", "其他運動"],
+];
+
+// Sleep is filed under the day you wake up, with its bedtime as the time,
+// so a bedtime from the evening before sorts to the top of that day.
+export function sortKey(e) {
+  return e.category === "sleep" && e.time >= "12:00" ? `-${e.time}` : e.time;
+}
 export const CATEGORY_LABEL = Object.fromEntries(CATEGORIES);
 
 const DAY_RE = /^## (\d{4}-\d{2}-\d{2})\b(?:.*?mood (\d(?:\.\d)?))?/;
@@ -158,12 +177,12 @@ function newFile(date) {
 export function addEntry(text, date, line) {
   const lines = text ? text.replace(/\n*$/, "").split("\n") : newFile(date);
   const day = ensureDay(lines, date);
-  const time = parseEntryLine(line).time;
+  const key = sortKey(parseEntryLine(line));
   let at = day.start + 1;
   while (at < day.end && WEATHER_RE.test(lines[at])) at++;
   for (let i = day.start + 1; i < day.end; i++) {
     const e = parseEntryLine(lines[i]);
-    if (e && e.time <= time) at = i + 1;
+    if (e && sortKey(e) <= key) at = i + 1;
   }
   lines.splice(at, 0, line);
   return finish(lines);

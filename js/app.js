@@ -2,6 +2,7 @@ import { Repo, loadSettings, saveSettings, clearSettings } from "./gh.js";
 import {
   CATEGORIES,
   CATEGORY_LABEL,
+  EXERCISES,
   parseMonth,
   monthPath,
   buildEntryLine,
@@ -14,7 +15,7 @@ import {
 } from "./logfmt.js";
 import { todayWeather, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
-const APP_VERSION = "v14";
+const APP_VERSION = "v15";
 import { summarize, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -28,7 +29,7 @@ let repo = new Repo(settings);
 const cache = { months: new Map(), monthList: null, files: new Map() };
 
 // Fixed category -> color slot, so a category keeps its color in every chart.
-const SERIES = ["work", "meeting", "learning", "health", "life", "family", "social", "finance"];
+const SERIES = ["work", "meeting", "exercise", "health", "life", "family", "social", "finance"];
 const seriesVar = (c) => (SERIES.includes(c) ? `var(--series-${SERIES.indexOf(c) + 1})` : "var(--series-other)");
 
 // ---------- helpers ----------
@@ -193,9 +194,23 @@ function entryRow(e, { actions = false } = {}) {
 
 function dayTotals(entries) {
   const by = {};
-  for (const e of entries) if (e.hours) by[e.category] = (by[e.category] || 0) + e.hours;
+  let sleep = 0;
+  for (const e of entries) {
+    if (!e.hours) continue;
+    if (e.category === "sleep") sleep += e.hours;
+    else by[e.category] = (by[e.category] || 0) + e.hours;
+  }
   const parts = Object.entries(by).map(([c, h]) => `${CATEGORY_LABEL[c] || c} ${formatDuration(h)}`);
-  return parts.length ? `合計：${parts.join("、")}` : "";
+  const total = parts.length ? `合計：${parts.join("、")}` : "";
+  return [total, sleep ? `昨晚睡眠 ${formatDuration(sleep)}` : ""].filter(Boolean).join("・");
+}
+
+const EXERCISE_LABEL = Object.fromEntries(EXERCISES);
+
+function minutesBetween(a, b) {
+  const [ah, am] = a.split(":").map(Number);
+  const [bh, bm] = b.split(":").map(Number);
+  return (bh * 60 + bm - (ah * 60 + am) + 24 * 60) % (24 * 60);
 }
 
 async function viewToday(date, focus) {
@@ -315,6 +330,39 @@ async function viewLog(date) {
       .map((n) => `<button class="mood-btn ${day && day.mood === n ? "on" : ""}" data-mood="${n}" aria-label="心情 ${n}">${n}</button>`)
       .join("")}</div>
   </section>
+  <section class="card" id="quick-card">
+    <h2>快速記錄</h2>
+    <div class="chips">
+      <button type="button" class="chip" data-quick="sleep">😴 睡眠</button>
+      <button type="button" class="chip" data-quick="exercise">🏃 運動</button>
+    </div>
+    <form id="sleep-form" class="quick-form" hidden autocomplete="off">
+      <p class="muted hint">睡眠記在起床的這一天（${zhDate(date, false)}）。</p>
+      <div class="row">
+        <label>就寢<input type="time" name="bed" required value="23:00"></label>
+        <label>起床<input type="time" name="wake" required value="06:30"></label>
+      </div>
+      <p class="muted hint" id="sleep-length"></p>
+      <div class="form-actions"><button type="submit" class="btn primary">儲存睡眠</button></div>
+    </form>
+    <form id="exercise-form" class="quick-form" hidden autocomplete="off">
+      <label>項目
+        <div class="chips" id="ex-chips">${EXERCISES.map(
+          ([v, l], i) => `<button type="button" class="chip ${i === 0 ? "on" : ""}" data-ex="${v}">${l}</button>`
+        ).join("")}</div>
+      </label>
+      <label id="ex-other-row" hidden>運動名稱<input type="text" name="other" placeholder="例如：爬山"></label>
+      <div class="row">
+        <label>開始<input type="time" name="start" required value="${nowTaipei()}"></label>
+        <label>距離（公里，可不填）<input type="number" name="km" step="any" min="0" inputmode="decimal"></label>
+      </div>
+      <div class="row">
+        <label>時長（小時）<input type="number" name="dh" min="0" max="24" step="1" inputmode="numeric" placeholder="0"></label>
+        <label>（分鐘）<input type="number" name="dm" min="0" max="59" step="5" inputmode="numeric" value="30"></label>
+      </div>
+      <div class="form-actions"><button type="submit" class="btn primary">儲存運動</button></div>
+    </form>
+  </section>
   <section class="card" id="form-card">
     <h2 id="form-title">新增紀錄</h2>
     <form id="entry-form" autocomplete="off">
@@ -399,6 +447,62 @@ async function viewLog(date) {
       btn.textContent = label;
     }
   };
+
+  const sleepForm = document.getElementById("sleep-form");
+  const exForm = document.getElementById("exercise-form");
+  let exercise = EXERCISES[0][0];
+  document.getElementById("quick-card").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-quick]");
+    if (!b) return;
+    const kind = b.dataset.quick;
+    sleepForm.hidden = kind !== "sleep" || !sleepForm.hidden;
+    exForm.hidden = kind !== "exercise" || !exForm.hidden;
+    document.querySelectorAll("[data-quick]").forEach((c) => c.classList.toggle("on", c === b && !(kind === "sleep" ? sleepForm : exForm).hidden));
+  });
+  const showSleep = () => {
+    const mins = minutesBetween(sleepForm.bed.value, sleepForm.wake.value);
+    document.getElementById("sleep-length").textContent = mins ? `共 ${formatDuration(mins / 60)}` : "";
+  };
+  sleepForm.addEventListener("input", showSleep);
+  showSleep();
+  sleepForm.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const mins = minutesBetween(sleepForm.bed.value, sleepForm.wake.value);
+    if (!mins) return toast("就寢和起床時間不能一樣", true);
+    const line = buildEntryLine({ time: sleepForm.bed.value, category: "sleep", hours: mins / 60, text: "睡眠" });
+    const ok = await busy(sleepForm.querySelector("button[type=submit]"), () => writeLog(date, (text) => addEntry(text, date, line)));
+    if (ok) {
+      toast("睡眠已記錄");
+      viewLog(date);
+    }
+  });
+  document.getElementById("ex-chips").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-ex]");
+    if (!b) return;
+    exercise = b.dataset.ex;
+    document.querySelectorAll("#ex-chips .chip").forEach((c) => c.classList.toggle("on", c === b));
+    document.getElementById("ex-other-row").hidden = exercise !== "other";
+  });
+  exForm.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const hours = (parseFloat(exForm.dh.value) || 0) + (parseFloat(exForm.dm.value) || 0) / 60;
+    if (!hours) return toast("請填運動時長", true);
+    const name = exercise === "other" ? exForm.other.value.trim() || "運動" : EXERCISE_LABEL[exercise];
+    const km = parseFloat(exForm.km.value);
+    const line = buildEntryLine({
+      time: exForm.start.value,
+      category: "exercise",
+      hours,
+      text: name,
+      tags: [exercise],
+      metrics: km > 0 ? [["km", km]] : [],
+    });
+    const ok = await busy(exForm.querySelector("button[type=submit]"), () => writeLog(date, (text) => addEntry(text, date, line)));
+    if (ok) {
+      toast(`${name}已記錄`);
+      viewLog(date);
+    }
+  });
 
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -527,7 +631,7 @@ async function viewStats() {
   </div>
   <p class="range-label muted">${label}</p>
   <div class="tiles">
-    <div class="tile"><span>總工時</span><strong>${fmtH(s.totalHours)}</strong>${delta(s.totalHours, prev ? prev.totalHours : 0, "h")}</div>
+    <div class="tile"><span>總時數（不含睡眠）</span><strong>${fmtH(s.totalHours)}</strong>${delta(s.totalHours, prev ? prev.totalHours : 0, "h")}</div>
     <div class="tile"><span>紀錄</span><strong>${s.entries}<small> 筆</small></strong>${delta(s.entries, prev ? prev.entries : 0, " 筆")}</div>
     <div class="tile"><span>有記錄的天數</span><strong>${s.daysLogged}${s.daysSoFar !== null ? `<small> / ${s.daysSoFar}</small>` : ""}</strong></div>
     <div class="tile"><span>連續記錄</span><strong>${s.streak}<small> 天</small></strong></div>
@@ -543,6 +647,24 @@ async function viewStats() {
       ${s.moodAvg !== null ? `<dt>心情平均</dt><dd>${s.moodAvg.toFixed(1)}（${s.moodDays} 天）</dd>` : ""}
       ${c.due ? `<dt>說到做到</dt><dd>${c.done} / ${c.due}${c.dropped ? `・取消 ${c.dropped}` : ""}${c.open ? `・未完成 ${c.open}` : ""}</dd>` : ""}
     </dl></section>`
+      : ""
+  }
+  ${
+    s.sleep
+      ? `<section class="card"><h2>😴 睡眠</h2><dl class="kv">
+      <dt>平均睡眠</dt><dd>${formatDuration(s.sleep.avg)}</dd>
+      <dt>平均就寢</dt><dd>${s.sleep.avgBedtime}</dd>
+      <dt>記錄天數</dt><dd>${s.sleep.nights} 晚</dd>
+    </dl></section>`
+      : ""
+  }
+  ${
+    s.exercise.sessions
+      ? `<section class="card"><h2>🏃 運動</h2><p class="muted totals">共 ${s.exercise.sessions} 次・${formatDuration(s.exercise.hours)}</p>${barList(
+          Object.entries(s.exercise.byType)
+            .sort((a, b) => b[1].h - a[1].h)
+            .map(([t, v]) => ({ label: EXERCISE_LABEL[t] || t, color: seriesVar("exercise"), value: v.h, text: `${formatDuration(v.h)}・${v.n} 次` }))
+        )}</section>`
       : ""
   }
   <section class="card"><h2>熱力圖（最近一年）</h2>${heatmap(entries, today)}</section>`;
