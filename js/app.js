@@ -15,7 +15,7 @@ import {
 } from "./logfmt.js";
 import { todayWeather, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
-const APP_VERSION = "v15";
+const APP_VERSION = "v16";
 import { summarize, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -286,7 +286,7 @@ async function loadWeather(date, day, tapped = false) {
     const now = describe(w.nowCode);
     card.innerHTML = `<div class="weather-row">
       <div class="weather-icon" aria-hidden="true">${now.icon}</div>
-      <div class="weather-main"><strong>${w.now}°C</strong><span>${esc(w.place)}・現在${esc(now.text)}</span></div>
+      <div class="weather-main"><strong>${w.now}°C</strong><span>${esc(w.place)}${w.fallback ? `（${esc(w.fallback)}）` : ""}・現在${esc(now.text)}</span></div>
       <div class="weather-day"><span>${today.icon} ${esc(today.text)}</span><span>${w.min}–${w.max}°C</span>${
         w.rain !== null && w.rain !== undefined ? `<span>降雨 ${w.rain}%</span>` : ""
       }</div>
@@ -295,6 +295,10 @@ async function loadWeather(date, day, tapped = false) {
       await writeLog(date, (text) => setWeather(text, date, weatherLine(w, nowTaipei(1))), `Weather: ${date}`);
     }
   } catch (e) {
+    if (card.isConnected && day && day.weather) {
+      card.innerHTML = `<p class="weather-saved">${esc(day.weather)}</p><p class="muted diag">目前抓不到位置，顯示今天稍早記錄的天氣</p>`;
+      return;
+    }
     if (card.isConnected) {
       const state = await locationPermission();
       card.innerHTML = `<p class="muted">天氣：${esc(e.message || "無法取得")}${

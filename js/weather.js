@@ -4,6 +4,7 @@
 
 const CACHE_KEY = "pa-app.weather";
 const PLACE_KEY = "pa-app.weather-place";
+const LAST_KEY = "pa-app.weather-last";
 
 // Used when the phone's location is unavailable, or always when "fixed" is on.
 export const CITIES = [
@@ -139,6 +140,14 @@ function cached() {
   }
 }
 
+function lastPlace() {
+  try {
+    return JSON.parse(localStorage.getItem(LAST_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
+
 // "granted", "prompt" or "denied". Chrome quietly blocks location requests
 // that do not come from a tap, so "prompt" needs a button first.
 export async function locationPermission() {
@@ -160,14 +169,29 @@ export async function todayWeather({ useCity = false } = {}) {
     data = { ...(await forecast({ lat: entry[1], lon: entry[2] })), place: entry[0] };
   } else {
     let pos;
+    let place;
     try {
       pos = await position();
     } catch (e) {
-      if (!entry) throw e;
-      return todayWeather({ useCity: true });
+      // Fall back to the last place that worked (an ad blocker can block
+      // location on some days), then to the city from the settings.
+      const last = lastPlace();
+      if (last) {
+        data = { ...(await forecast(last)), place: last.place, fallback: "上次位置" };
+      } else if (entry) {
+        return todayWeather({ useCity: true });
+      } else {
+        throw e;
+      }
     }
-    const [w, place] = await Promise.all([forecast(pos), placeName(pos)]);
-    data = { ...w, place };
+    if (pos) {
+      const [w, name] = await Promise.all([forecast(pos), placeName(pos)]);
+      place = name;
+      data = { ...w, place };
+      try {
+        localStorage.setItem(LAST_KEY, JSON.stringify({ ...pos, place }));
+      } catch {}
+    }
   }
   try {
     sessionStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), data }));
@@ -178,5 +202,5 @@ export async function todayWeather({ useCity = false } = {}) {
 // The line stored under the day's heading in logs/YYYY-MM.md.
 export function weatherLine(w, time) {
   const rain = w.rain === null || w.rain === undefined ? "" : `・降雨 ${w.rain}%`;
-  return `> 天氣：${w.place}・${describe(w.code).text}・${w.min}–${w.max}°C${rain}（${time} 記錄）`;
+  return `> 天氣：${w.place}${w.fallback ? `（${w.fallback}）` : ""}・${describe(w.code).text}・${w.min}–${w.max}°C${rain}（${time} 記錄）`;
 }
