@@ -2,8 +2,11 @@
 // lives in GitHub; photos and programs stay in the user's Google Drive and
 // are linked by folder URL.
 //
-//   ## 2026-10-29 · 奕郝 · 打包機
-//   - 廠商：田豐
+// 客戶 is who hired the job; 業主 is the end user on site when the job came
+// through a client (e.g. 奕郝 serviced under 田豐's name).
+//
+//   ## 2026-10-29 · 田豐 · 打包機
+//   - 業主：奕郝
 //   - 年份：103年
 //   - 現象：…
 //   - 處理：更換 PLC FBs-24MAR2-AC；安裝 103 年舊程式
@@ -11,7 +14,7 @@
 //   - 資料夾：https://drive.google.com/drive/folders/…
 
 export const FIELDS = [
-  ["maker", "廠商"],
+  ["owner", "業主"],
   ["year", "年份"],
   ["symptom", "現象"],
   ["cause", "原因"],
