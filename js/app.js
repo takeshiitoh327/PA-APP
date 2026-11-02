@@ -16,7 +16,7 @@ import {
 import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./repairs.js";
 import { todayWeather, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
-const APP_VERSION = "v19";
+const APP_VERSION = "v20";
 import { summarize, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -205,17 +205,26 @@ function linkify(text) {
     .join("");
 }
 
+// Sleep quality, stored as [sleep_q=N] on the sleep entry.
+const SLEEP_QUALITY = [["1", "佳"], ["2", "普通"], ["3", "差"]];
+function sleepQualityLabel(v) {
+  const hit = SLEEP_QUALITY.find(([k]) => k === String(v));
+  return hit ? hit[1] : "";
+}
+
 function dayTotals(entries) {
   const by = {};
   let sleep = 0;
+  let quality = "";
   for (const e of entries) {
+    if (e.category === "sleep" && e.metrics && e.metrics.sleep_q) quality = sleepQualityLabel(e.metrics.sleep_q);
     if (!e.hours) continue;
     if (e.category === "sleep") sleep += e.hours;
     else by[e.category] = (by[e.category] || 0) + e.hours;
   }
   const parts = Object.entries(by).map(([c, h]) => `${CATEGORY_LABEL[c] || c} ${formatDuration(h)}`);
   const total = parts.length ? `合計：${parts.join("、")}` : "";
-  return [total, sleep ? `昨晚睡眠 ${formatDuration(sleep)}` : ""].filter(Boolean).join("・");
+  return [total, sleep ? `昨晚睡眠 ${formatDuration(sleep)}${quality ? `（${quality}）` : ""}` : ""].filter(Boolean).join("・");
 }
 
 const EXERCISE_LABEL = Object.fromEntries(EXERCISES);
@@ -385,6 +394,9 @@ async function viewLog(date) {
         <label>起床<input type="time" name="wake" required value="06:30"></label>
       </div>
       <p class="muted hint" id="sleep-length"></p>
+      <label>睡眠狀況
+        <div class="chips">${SLEEP_QUALITY.map(([v, l]) => `<label class="chip radio"><input type="radio" name="q" value="${v}">${l}</label>`).join("")}</div>
+      </label>
       <div class="form-actions"><button type="submit" class="btn primary">儲存睡眠</button></div>
     </form>
     <form id="exercise-form" class="quick-form" hidden autocomplete="off">
@@ -543,7 +555,14 @@ async function viewLog(date) {
     ev.preventDefault();
     const mins = minutesBetween(sleepForm.bed.value, sleepForm.wake.value);
     if (!mins) return toast("就寢和起床時間不能一樣", true);
-    const line = buildEntryLine({ time: sleepForm.bed.value, category: "sleep", hours: mins / 60, text: "睡眠" });
+    const q = sleepForm.q.value;
+    const line = buildEntryLine({
+      time: sleepForm.bed.value,
+      category: "sleep",
+      hours: mins / 60,
+      text: q ? `睡眠・${sleepQualityLabel(q)}` : "睡眠",
+      metrics: q ? [["sleep_q", q]] : [],
+    });
     const ok = await busy(sleepForm.querySelector("button[type=submit]"), () => writeLog(date, (text) => addEntry(text, date, line)));
     if (ok) {
       toast("睡眠已記錄");
@@ -776,6 +795,7 @@ async function viewStats() {
       <dt>平均睡眠</dt><dd>${formatDuration(s.sleep.avg)}</dd>
       <dt>平均就寢</dt><dd>${s.sleep.avgBedtime}</dd>
       <dt>記錄天數</dt><dd>${s.sleep.nights} 晚</dd>
+      ${s.sleep.rated ? `<dt>睡眠狀況</dt><dd>${SLEEP_QUALITY.map(([v, l]) => `${l} ${s.sleep.quality[v] || 0}`).join("・")}</dd>` : ""}
     </dl></section>`
       : ""
   }

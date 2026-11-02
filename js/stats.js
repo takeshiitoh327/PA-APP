@@ -116,6 +116,13 @@ export function summarize(days, entries, start, end, today) {
           nights: sleeps.length,
           avg: sleeps.reduce((a, e) => a + e.hours, 0) / sleeps.length,
           avgBedtime: avgClock(sleeps.map((e) => e.time)),
+          // 1 佳, 2 普通, 3 差
+          quality: sleeps.reduce((q, e) => {
+            const v = e.metrics && e.metrics.sleep_q;
+            if (v) q[String(v)] = (q[String(v)] || 0) + 1;
+            return q;
+          }, {}),
+          rated: sleeps.filter((e) => e.metrics && e.metrics.sleep_q).length,
         }
       : null,
     exercise,
