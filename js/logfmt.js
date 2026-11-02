@@ -118,6 +118,9 @@ export function parseMonth(text) {
       current.entries.push(e);
     }
   }
+  // Show each day from early to late even if the file is out of order
+  // (last night's sleep first).
+  for (const day of days.values()) day.entries.sort((a, b) => (sortKey(a) < sortKey(b) ? -1 : sortKey(a) > sortKey(b) ? 1 : 0));
   return days;
 }
 
@@ -194,9 +197,10 @@ export function replaceEntry(text, date, oldLine, newLine) {
   if (!day) throw new Error("找不到這一天");
   const i = lines.slice(day.start, day.end).indexOf(oldLine);
   if (i < 0) throw new Error("找不到這筆紀錄，可能已被修改，請重新整理");
-  if (newLine === null) lines.splice(day.start + i, 1);
-  else lines[day.start + i] = newLine;
-  return finish(lines);
+  lines.splice(day.start + i, 1);
+  if (newLine === null) return finish(lines);
+  // Re-insert so an edited time moves the entry to its place in the day.
+  return addEntry(finish(lines), date, newLine);
 }
 
 // Puts the "> 天氣：…" line right under the day's heading, replacing any earlier one.
