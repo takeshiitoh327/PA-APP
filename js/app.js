@@ -16,7 +16,7 @@ import {
 import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./repairs.js";
 import { todayWeather, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
-const APP_VERSION = "v20";
+const APP_VERSION = "v21";
 import { summarize, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -170,7 +170,8 @@ function dateNav(date, base) {
 function entryRow(e, { actions = false } = {}) {
   const end = endTime(e.time, e.hours);
   const tags = e.tags.filter((t) => !["done", "dropped", "moved"].includes(t));
-  const metrics = Object.entries(e.metrics);
+  // sleep_q is already shown as 佳/普通/差 in the text.
+  const metrics = Object.entries(e.metrics).filter(([k]) => k !== "sleep_q");
   const status = e.category === "plan" ? (e.status === "done" ? "✓ 完成" : e.status === "dropped" ? "✗ 取消" : e.due ? `到期 ${e.due.slice(5).replace("-", "/")}` : "") : "";
   return `<li class="entry ${e.category === "plan" ? `plan ${e.status}` : ""}">
     <div class="entry-time">${e.time}${end ? `<i class="time-line" aria-hidden="true"></i><span><span class="sr-only">至 </span>${end}</span>` : ""}</div>
@@ -346,7 +347,7 @@ async function viewLog(date) {
   const tagCount = {};
   for (const e of all.entries) for (const t of e.tags) if (!["done", "dropped", "moved"].includes(t)) tagCount[t] = (tagCount[t] || 0) + 1;
   const recentTags = Object.entries(tagCount).sort((a, b) => b[1] - a[1]).slice(0, 16).map(([t]) => t);
-  const metricNames = [...new Set(all.entries.flatMap((e) => Object.keys(e.metrics)))];
+  const metricNames = [...new Set(all.entries.flatMap((e) => Object.keys(e.metrics)))].filter((k) => k !== "sleep_q");
 
   view.innerHTML = `${dateNav(date, "log")}
   <section class="card">
