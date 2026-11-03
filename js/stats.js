@@ -157,6 +157,7 @@ export function projectSummary(entries, start, end, phases) {
   const projects = new Map();
   let untracked = 0;
   let untrackedCount = 0;
+  const untrackedEntries = [];
   for (const e of entries) {
     if (e.date < start || e.date > end || !e.hours) continue;
     if (e.category === "sleep" || e.tags.includes("repair")) continue;
@@ -164,6 +165,7 @@ export function projectSummary(entries, start, end, phases) {
       if (e.category === "work") {
         untracked += e.hours;
         untrackedCount++;
+        untrackedEntries.push(e);
       }
       continue;
     }
@@ -178,5 +180,6 @@ export function projectSummary(entries, start, end, phases) {
   }
   const list = [...projects.values()].sort((a, b) => b.last.localeCompare(a.last) || b.hours - a.hours);
   for (const p of list) p.entries.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
-  return { list, total: list.reduce((a, p) => a + p.hours, 0), untracked, untrackedCount };
+  untrackedEntries.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  return { list, total: list.reduce((a, p) => a + p.hours, 0), untracked, untrackedCount, untrackedEntries };
 }

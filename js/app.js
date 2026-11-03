@@ -18,7 +18,7 @@ import * as outbox from "./outbox.js";
 import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./repairs.js";
 import { todayWeather, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
-const APP_VERSION = "v31";
+const APP_VERSION = "v32";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -1082,7 +1082,13 @@ async function viewProjects() {
   }
   ${
     s.untrackedCount
-      ? `<section class="card"><p class="muted">另有 ${s.untrackedCount} 筆工作（${fmtH(s.untracked)}）沒有標專案，不在上面的統計裡。到「日誌」編輯那筆紀錄，填「專案」並選工作項目即可。</p></section>`
+      ? `<section class="card project untracked">
+      <div class="card-head"><h2>未歸類的工作</h2><strong class="project-total">${fmtH(s.untracked)}</strong></div>
+      <p class="muted project-span">${s.untrackedCount} 筆沒有標專案，不算在上面的專案裡。點日期到日誌編輯，填「專案」並選工作項目即可歸類。</p>
+      <ul class="untracked-list">${s.untrackedEntries
+        .map((e) => `<li><a href="#/log/${e.date}">${md(e.date)}</a> ${e.time}・${formatDuration(e.hours)}<br><span>${esc(e.plain)}</span></li>`)
+        .join("")}</ul>
+    </section>`
       : ""
   }`;
   view.querySelector(".segmented:not(.stats-switch)").addEventListener("click", (ev) => {
