@@ -324,3 +324,11 @@ label.check input { width: auto; margin: 0; transform: scale(1.3); }
 .bullets { margin: 0; padding-left: 1.1em; }
 .list-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .repair .card-head .muted { white-space: nowrap; }
+.outbox-btn { border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--text); border-radius: 999px; padding: 4px 12px; font: inherit; font-size: .9rem; font-weight: 600; cursor: pointer; }
+.outbox-btn.has-error { border-color: var(--danger, #d14343); }
+.outbox-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 10px; }
+.outbox-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid var(--border); }
+.outbox-text { min-width: 0; overflow-wrap: anywhere; font-size: .9rem; }
+.outbox-error { margin: 4px 0 0; color: var(--danger, #d14343); font-size: .85rem; }
+
+.outbox-list .btn { flex: none; white-space: nowrap; }

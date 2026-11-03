@@ -52,9 +52,27 @@ export class Repo {
     Object.assign(this, { owner, repo, branch, token });
   }
 
+  // Gives up after 10 seconds; a request that fails for lack of network
+  // throws an error with offline: true.
   async request(method, path, body) {
-    const res = await fetch(`${API}/repos/${this.owner}/${this.repo}${path}`, {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 10000);
+    let res;
+    try {
+      res = await this.fetchApi(method, path, body, ctl.signal);
+    } catch (e) {
+      throw Object.assign(new Error("沒有網路連線"), { offline: true, cause: e });
+    } finally {
+      clearTimeout(timer);
+    }
+    return this.readResponse(res);
+  }
+
+  fetchApi(method, path, body, signal) {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return Promise.reject(new TypeError("offline"));
+    return fetch(`${API}/repos/${this.owner}/${this.repo}${path}`, {
       method,
+      signal,
       cache: "no-store",
       headers: {
         Accept: "application/vnd.github+json",
@@ -64,6 +82,9 @@ export class Repo {
       },
       body: body ? JSON.stringify(body) : undefined,
     });
+  }
+
+  async readResponse(res) {
     if (res.status === 404) return null;
     if (!res.ok) {
       let message = res.statusText;

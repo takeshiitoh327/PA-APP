@@ -13,10 +13,11 @@ import {
   setWeather,
   formatDuration,
 } from "./logfmt.js";
+import * as outbox from "./outbox.js";
 import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./repairs.js";
 import { todayWeather, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
-const APP_VERSION = "v27";
+const APP_VERSION = "v28";
 import { summarize, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -71,7 +72,10 @@ function renderMarkdown(md) {
 }
 
 let toastTimer;
+let queuedNotice = false;
 function toast(msg, isError = false) {
+  if (queuedNotice && !isError) msg = "📴 沒有網路：已先存在手機（⏳），恢復連線後自動上傳";
+  queuedNotice = false;
   const el = document.getElementById("toast");
   el.textContent = msg;
   el.className = isError ? "show error" : "show";
@@ -82,7 +86,7 @@ function toast(msg, isError = false) {
 function errorText(e) {
   if (e.status === 401) return "Token 無效或已過期，請到設定更新";
   if (e.status === 403) return "Token 權限不足（需要 Contents 讀寫）或已達 API 上限";
-  if (e instanceof TypeError) return "網路連線失敗，請稍後再試";
+  if (e.offline || e instanceof TypeError) return "沒有網路連線，請稍後再試";
   if (e.status === 409 || e.status === 422) return "GitHub 還在更新剛剛的資料，請等幾秒再按一次儲存";
   return e.message || String(e);
 }
@@ -94,15 +98,64 @@ function loading(msg = "讀取中…") {
 // ---------- data ----------
 
 async function getText(path) {
-  if (!cache.files.has(path)) cache.files.set(path, repo.getFile(path).then((f) => (f ? f.text : null)));
+  if (!cache.files.has(path)) cache.files.set(path, remoteText(path));
   return cache.files.get(path);
+}
+
+// Set when a request fails for lack of network, so the next minute of
+// reads use the phone's copies at once instead of waiting for a timeout.
+let offlineUntil = 0;
+const seemsOffline = () => navigator.onLine === false || Date.now() < offlineUntil;
+function noteOffline(e) {
+  if (e && e.offline) offlineUntil = Date.now() + 60000;
+}
+
+// A file from GitHub; offline, the last copy read on this phone.
+async function remoteText(path) {
+  if (seemsOffline()) {
+    const copy = outbox.loadCopy(path);
+    if (copy !== undefined) return copy;
+  }
+  try {
+    const f = await repo.getFile(path);
+    const text = f ? f.text : null;
+    outbox.saveCopy(path, text);
+    return text;
+  } catch (e) {
+    noteOffline(e);
+    const copy = outbox.loadCopy(path);
+    if (e.offline && copy !== undefined) return copy;
+    if (e.offline && outbox.waitingPaths(path).length) return null;
+    throw e;
+  }
+}
+
+async function remoteList(dir) {
+  const key = `${dir}/`;
+  if (seemsOffline() && outbox.loadCopy(key)) return outbox.loadCopy(key);
+  try {
+    const names = (await repo.listDir(dir)).map((f) => f.name);
+    outbox.saveCopy(key, names);
+    return names;
+  } catch (e) {
+    noteOffline(e);
+    if (e.offline) return outbox.loadCopy(key) || [];
+    throw e;
+  }
 }
 
 async function getMonth(month) {
   if (!cache.months.has(month)) {
+    const path = `logs/${month}.md`;
     cache.months.set(
       month,
-      repo.getFile(`logs/${month}.md`).then((f) => ({ text: f ? f.text : null, days: parseMonth(f ? f.text : "") }))
+      remoteText(path).then((remote) => {
+        const text = outbox.overlay(path, remote);
+        const days = parseMonth(text || "");
+        const waiting = outbox.waitingLines();
+        for (const day of days.values()) for (const e of day.entries) e.waiting = waiting.has(e.line);
+        return { text, days };
+      })
     );
   }
   return cache.months.get(month);
@@ -110,9 +163,12 @@ async function getMonth(month) {
 
 async function allLogs() {
   if (!cache.monthList) {
-    cache.monthList = repo
-      .listDir("logs")
-      .then((files) => files.map((f) => f.name).filter((n) => /^\d{4}-\d{2}\.md$/.test(n)).map((n) => n.slice(0, 7)).sort());
+    cache.monthList = remoteList("logs").then((names) =>
+      [...new Set([...names, ...outbox.waitingPaths("logs/").map((p) => p.slice(5))])]
+        .filter((n) => /^\d{4}-\d{2}\.md$/.test(n))
+        .map((n) => n.slice(0, 7))
+        .sort()
+    );
   }
   const months = await cache.monthList;
   const parsed = await Promise.all(months.map(getMonth));
@@ -127,16 +183,124 @@ async function allLogs() {
   return { days, entries };
 }
 
-async function writeLog(date, transform, message) {
-  const path = monthPath(date);
-  await repo.updateFile(path, transform, message || `Log: ${date}`);
-  cache.months.delete(date.slice(0, 7));
-  cache.monthList = null;
+// ---------- saving, with an offline outbox ----------
+
+function forget(op) {
+  if (op.kind === "repair") cache.repairs = null;
+  else {
+    cache.months.delete(op.date.slice(0, 7));
+    cache.monthList = null;
+  }
+}
+
+function runOp(op) {
+  return repo.updateFile(outbox.pathOf(op), outbox.transformOf(op), outbox.messageOf(op));
+}
+
+// Saves a change to GitHub. Without network it waits in the outbox, and
+// while older changes are waiting, new ones queue behind them.
+async function save(op) {
+  if (outbox.count() === 0 && !seemsOffline()) {
+    try {
+      await runOp(op);
+      forget(op);
+      return "saved";
+    } catch (e) {
+      noteOffline(e);
+      if (!e.offline) throw e;
+    }
+  }
+  outbox.add(op);
+  forget(op);
+  queuedNotice = op.a !== "weather";
+  updateOutboxButton();
+  if (!seemsOffline()) flushOutbox();
+  return "queued";
+}
+
+function writeLog(date, change) {
+  return save({ kind: "log", date, ...change });
+}
+
+let flushing = null;
+// Uploads waiting changes in order; stops at the first network failure.
+function flushOutbox() {
+  if (flushing || !outbox.count() || !settings.token) return flushing;
+  flushing = (async () => {
+    let sent = 0;
+    for (const op of outbox.list()) {
+      try {
+        await runOp(op);
+        offlineUntil = 0;
+        outbox.remove(op.id);
+        forget(op);
+        sent++;
+      } catch (e) {
+        noteOffline(e);
+        if (e.offline) break;
+        outbox.setError(op.id, errorText(e));
+      }
+    }
+    updateOutboxButton();
+    if (sent) {
+      toast(`⏳ 已上傳 ${sent} 筆離線紀錄`);
+      const a = document.activeElement;
+      if (!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) route();
+    }
+  })().finally(() => (flushing = null));
+  return flushing;
+}
+
+function updateOutboxButton() {
+  const n = outbox.count();
+  const btn = document.getElementById("outbox-btn");
+  btn.hidden = n === 0;
+  btn.textContent = `⏳ ${n}`;
+  btn.classList.toggle("has-error", outbox.list().some((o) => o.error));
+}
+
+async function viewOutbox() {
+  titleEl.textContent = "待上傳";
+  const ops = outbox.list();
+  view.innerHTML = `<section class="card">
+    <h2>⏳ 待上傳 ${ops.length} 筆</h2>
+    <p class="muted">沒有網路時存的紀錄先放在這支手機，恢復連線或打開 app 時會自動依序上傳到 GitHub。</p>
+    ${
+      ops.length
+        ? `<ul class="outbox-list">${ops
+            .map(
+              (o) => `<li data-id="${esc(o.id)}"><div class="outbox-text">${esc(outbox.describe(o))}${
+                o.error ? `<p class="outbox-error">上傳失敗：${esc(o.error)}</p>` : ""
+              }</div><button type="button" class="btn small ghost danger" data-del>刪除</button></li>`
+            )
+            .join("")}</ul>
+      <div class="form-actions"><button type="button" class="btn primary" id="outbox-send">立即上傳</button></div>`
+        : `<p>全部都上傳了。</p>`
+    }
+  </section>`;
+  view.querySelector(".outbox-list")?.addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-del]");
+    if (!b) return;
+    const id = b.closest("li").dataset.id;
+    const op = outbox.list().find((o) => o.id === id);
+    if (!op || !confirm(`刪除這筆還沒上傳的紀錄？\n\n${outbox.describe(op)}`)) return;
+    outbox.remove(id);
+    forget(op);
+    updateOutboxButton();
+    viewOutbox();
+  });
+  document.getElementById("outbox-send")?.addEventListener("click", async (ev) => {
+    ev.target.disabled = true;
+    await flushOutbox();
+    if (outbox.count()) toast(navigator.onLine === false ? "還是沒有網路，稍後會自動再試" : "有些紀錄還沒上傳，請看上面的說明", true);
+    viewOutbox();
+  });
 }
 
 // ---------- views ----------
 
 const routes = {
+  outbox: viewOutbox,
   repairs: viewRepairs,
   today: viewToday,
   brief: (d) => viewToday(d, "brief"),
@@ -177,7 +341,7 @@ function entryRow(e, { actions = false } = {}) {
   return `<li class="entry ${e.category === "plan" ? `plan ${e.status}` : ""}">
     <div class="entry-time">${e.time}${end ? `<i class="time-line" aria-hidden="true"></i><span><span class="sr-only">至 </span>${end}</span>` : ""}</div>
     <div class="entry-body">
-      <div class="entry-text">${linkify(e.plain)}</div>
+      <div class="entry-text">${e.waiting ? `<span class="waiting" title="還沒上傳">⏳</span> ` : ""}${linkify(e.plain)}</div>
       <div class="entry-meta">
         <span class="cat"><i style="background:${seriesVar(e.category)}"></i>${esc(CATEGORY_LABEL[e.category] || e.category)}</span>
         ${e.hours ? `<span>${formatDuration(e.hours)}</span>` : ""}
@@ -316,7 +480,7 @@ async function loadWeather(date, day, tapped = false) {
       }</div>
     </div>${w.rain >= 50 ? `<p class="weather-tip">☂️ 今天降雨機率高，記得帶傘</p>` : ""}`;
     if (!day || !day.weather) {
-      await writeLog(date, (text) => setWeather(text, date, weatherLine(w, nowTaipei(1))), `Weather: ${date}`);
+      if (navigator.onLine !== false) await writeLog(date, { a: "weather", line: weatherLine(w, nowTaipei(1)) });
     }
   } catch (e) {
     if (card.isConnected && day && day.weather) {
@@ -509,7 +673,7 @@ async function viewLog(date) {
       text: q ? `睡眠・${sleepQualityLabel(q)}` : "睡眠",
       metrics: q ? [["sleep_q", q]] : [],
     });
-    const ok = await busy(sleepForm.querySelector("button[type=submit]"), () => writeLog(date, (text) => addEntry(text, date, line)));
+    const ok = await busy(sleepForm.querySelector("button[type=submit]"), () => writeLog(date, { a: "add", line }));
     if (ok) {
       toast("睡眠已記錄");
       viewLog(date);
@@ -536,7 +700,7 @@ async function viewLog(date) {
       tags: [exercise],
       metrics: km > 0 ? [["km", km]] : [],
     });
-    const ok = await busy(exForm.querySelector("button[type=submit]"), () => writeLog(date, (text) => addEntry(text, date, line)));
+    const ok = await busy(exForm.querySelector("button[type=submit]"), () => writeLog(date, { a: "add", line }));
     if (ok) {
       toast(`${name}已記錄`);
       viewLog(date);
@@ -570,7 +734,7 @@ async function viewLog(date) {
     });
     const old = editing;
     const ok = await busy(document.getElementById("save-btn"), () =>
-      writeLog(date, (text) => (old ? replaceEntry(text, date, old, line) : addEntry(text, date, line)))
+      writeLog(date, old ? { a: "replace", old, line } : { a: "add", line })
     );
     if (ok) {
       toast(old ? "已更新並同步到 GitHub" : "已儲存並同步到 GitHub");
@@ -604,7 +768,7 @@ async function viewLog(date) {
     }
     if (act === "delete" && !confirm(`刪除這筆紀錄？\n\n${e.time} ${e.plain}`)) return;
     const newLine = act === "delete" ? null : `${e.line} #${act}`;
-    const ok = await busy(btn, () => writeLog(date, (text) => replaceEntry(text, date, e.line, newLine)));
+    const ok = await busy(btn, () => writeLog(date, { a: "replace", old: e.line, line: newLine }));
     if (ok) {
       toast(act === "delete" ? "已刪除" : act === "done" ? "已標為完成" : "已取消計畫");
       viewLog(date);
@@ -615,7 +779,7 @@ async function viewLog(date) {
     const b = ev.target.closest("[data-mood]");
     if (!b) return;
     const mood = day && day.mood === Number(b.dataset.mood) ? null : Number(b.dataset.mood);
-    const ok = await busy(b, () => writeLog(date, (text) => setMood(text, date, mood)));
+    const ok = await busy(b, () => writeLog(date, { a: "mood", mood }));
     if (ok) {
       toast(mood ? `心情 ${mood} 已記錄` : "已清除心情");
       viewLog(date);
@@ -632,10 +796,16 @@ function daysToMinutes(t) {
 
 async function allRepairs() {
   if (!cache.repairs) {
-    cache.repairs = repo.listDir("field/repairs").then(async (files) => {
-      const months = files.map((f) => f.name).filter((n) => /^\d{4}-\d{2}\.md$/.test(n));
-      const texts = await Promise.all(months.map((n) => repo.getFile(`field/repairs/${n}`)));
-      return texts.flatMap((t) => parseRepairs(t ? t.text : "")).sort((a, b) => b.date.localeCompare(a.date));
+    cache.repairs = remoteList("field/repairs").then(async (names) => {
+      const paths = [
+        ...new Set([...names.filter((n) => /^\d{4}-\d{2}\.md$/.test(n)).map((n) => `field/repairs/${n}`), ...outbox.waitingPaths("field/repairs/")]),
+      ];
+      const texts = await Promise.all(paths.map(async (p) => outbox.overlay(p, await remoteText(p))));
+      const waiting = new Set(outbox.waitingRepairs());
+      return texts
+        .flatMap((t) => parseRepairs(t || ""))
+        .map((x) => ({ ...x, waiting: waiting.has(`${x.date}|${x.customer}|${x.machine}`) }))
+        .sort((a, b) => b.date.localeCompare(a.date));
     });
   }
   return cache.repairs;
@@ -707,7 +877,7 @@ function repairCard(x) {
   const sub = [x.place && `📍 ${x.place}`, x.year, x.build].filter(Boolean);
   const list = (v) => `<ul class="bullets">${String(v).split("；").filter(Boolean).map((i) => `<li>${esc(i)}</li>`).join("")}</ul>`;
   return `<section class="card repair">
-    <div class="card-head"><h2>${esc(x.customer)}・${esc(x.machine)}</h2><span class="muted">${esc(x.date)}</span></div>
+    <div class="card-head"><h2>${x.waiting ? `<span class="waiting" title="還沒上傳">⏳</span> ` : ""}${esc(x.customer)}・${esc(x.machine)}</h2><span class="muted">${esc(x.date)}</span></div>
     ${who.length ? `<p class="repair-who">${esc(who.join("・"))}</p>` : ""}
     ${sub.length ? `<p class="muted repair-sub">${esc(sub.join("・"))}</p>` : ""}
     <dl class="kv repair-kv">${REPAIR_FIELDS.filter(([k]) => ["symptom", "cause", "fix", "parts"].includes(k) && x[k])
@@ -723,7 +893,7 @@ async function viewRepairs(openDate) {
   const list = await allRepairs();
   const render = () => {
     const q = repairQuery.trim().toLowerCase();
-    const hits = (q ? list.filter((x) => Object.values(x).join(" ").toLowerCase().includes(q)) : list.slice()).sort((a, b) =>
+    const hits = (q ? list.filter((x) => REPAIR_FIELDS.map(([k]) => x[k]).concat(x.customer, x.machine, x.date).join(" ").toLowerCase().includes(q)) : list.slice()).sort((a, b) =>
       repairOrder() === "old" ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date)
     );
     document.querySelectorAll("#repair-order button").forEach((btn) => btn.classList.toggle("on", btn.dataset.order === repairOrder()));
@@ -823,9 +993,8 @@ async function viewRepairs(openDate) {
     const btn = f.querySelector("button[type=submit]");
     btn.disabled = true;
     try {
-      await repo.updateFile(repairPath(date), (text) => addRepair(text, rec), `Repair: ${date} ${rec.customer}`);
-      if (logLine) await writeLog(date, (text) => addEntry(text, date, logLine));
-      cache.repairs = null;
+      await save({ kind: "repair", date, rec });
+      if (logLine) await writeLog(date, { a: "add", line: logLine });
       toast(logLine ? "維修紀錄和日誌都已儲存" : "維修紀錄已儲存");
       repairQuery = "";
       location.hash = "#/repairs";
@@ -1215,6 +1384,15 @@ document.addEventListener("pointerdown", (ev) => {
   if (!ev.target.closest("[data-tip]")) document.getElementById("tip").hidden = true;
 });
 window.addEventListener("hashchange", route);
+document.getElementById("outbox-btn").addEventListener("click", () => (location.hash = "#/outbox"));
+window.addEventListener("online", () => {
+  offlineUntil = 0;
+  flushOutbox();
+});
+document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && flushOutbox());
+setInterval(() => outbox.count() && navigator.onLine !== false && flushOutbox(), 60000);
+updateOutboxButton();
+flushOutbox();
 if (!location.hash) history.replaceState(null, "", "#/today");
 route();
 
