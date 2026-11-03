@@ -3,7 +3,7 @@
 //
 //   ## 2026-10-28 (Wed) · mood 4
 //   - 13:30 · work · 3h · 製作控制盤 #client [panels=2]
-//   - 08:00 · work · 3h50m · 迎廣 50T 配盤 @迎廣50T #迎廣 #wiring
+//   - 08:00 · work · 3h50m · 迎廣 50T 配盤配線 @迎廣50T #迎廣 #wiring
 //
 // "@name" is the project; one phase tag (see PHASES) says which part of it.
 
@@ -25,8 +25,8 @@ export const CATEGORIES = [
 
 // Phases of a panel project, stored as a tag on work entries.
 export const PHASES = [
-  ["layout", "電盤配置"],
-  ["wiring", "配盤"],
+  ["layout", "製作電盤"],
+  ["wiring", "配盤配線"],
   ["program", "程式編寫"],
   ["test", "試機"],
   ["other", "其他"],
