@@ -16,7 +16,7 @@ import {
 import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./repairs.js";
 import { todayWeather, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
-const APP_VERSION = "v22";
+const APP_VERSION = "v23";
 import { summarize, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -373,6 +373,8 @@ async function viewLog(date) {
         <label>機器<input type="text" name="machine" required placeholder="例如 打包機"></label>
         <label>年份<input type="text" name="year" placeholder="例如 103年"></label>
       </div>
+      <label>地點<input type="text" name="place" list="repair-places" placeholder="例如 南投、高雄岡山"></label>
+      <datalist id="repair-places"></datalist>
       <label>製造（機台／電控）<input type="text" name="build" placeholder="例如 機台 田豐；電控 中信"></label>
       <label>故障現象<textarea name="symptom" rows="2"></textarea></label>
       <label>原因<textarea name="cause" rows="2"></textarea></label>
@@ -519,6 +521,7 @@ async function viewLog(date) {
     .then((list) => {
       const opts = (k) => [...new Set(list.map((x) => x[k]).filter(Boolean))].map((m) => `<option value="${esc(m)}">`).join("");
       document.getElementById("repair-owners").innerHTML = opts("owner");
+      document.getElementById("repair-places").innerHTML = opts("place");
       document.getElementById("repair-customers").innerHTML += opts("customer");
     })
     .catch(() => {});
@@ -710,8 +713,8 @@ async function viewRepairs() {
           .map(
             (x) => `<section class="card repair">
       <div class="card-head"><h2>${esc(x.customer)}・${esc(x.machine)}</h2><span class="muted">${esc(x.date)}</span></div>
-      ${x.owner || x.year || x.build ? `<p class="muted repair-sub">${esc([x.owner && `業主 ${x.owner}`, x.year, x.build].filter(Boolean).join("・"))}</p>` : ""}
-      <dl class="kv repair-kv">${REPAIR_FIELDS.filter(([k]) => !["owner", "year", "build", "folder"].includes(k) && x[k])
+      ${x.owner || x.place || x.year || x.build ? `<p class="muted repair-sub">${esc([x.place && `📍 ${x.place}`, x.owner && `業主 ${x.owner}`, x.year, x.build].filter(Boolean).join("・"))}</p>` : ""}
+      <dl class="kv repair-kv">${REPAIR_FIELDS.filter(([k]) => !["owner", "place", "year", "build", "folder"].includes(k) && x[k])
         .map(([k, l]) => `<dt>${l}</dt><dd>${esc(x[k])}</dd>`)
         .join("")}</dl>
       ${/^https:\/\//.test(x.folder || "") ? `<a class="btn small" href="${esc(x.folder)}" target="_blank" rel="noopener">📁 打開雲端資料夾</a>` : ""}
@@ -720,7 +723,7 @@ async function viewRepairs() {
           .join("")
       : `<section class="card"><p class="muted">${q ? "找不到符合的維修紀錄。" : "還沒有維修紀錄。到「日誌」→ 快速記錄 →「🔧 維修」新增。"}</p></section>`;
   };
-  view.innerHTML = `<label class="search">搜尋（客戶、業主、機器、零件…）<input type="search" id="repair-q" value="${esc(repairQuery)}" placeholder="例如 田豐、奕郝、FBs"></label>
+  view.innerHTML = `<label class="search">搜尋（客戶、業主、地點、機器、零件…）<input type="search" id="repair-q" value="${esc(repairQuery)}" placeholder="例如 田豐、奕郝、FBs"></label>
   <p class="muted range-label">共 ${list.length} 筆</p>
   <div id="repair-list"></div>`;
   render();
