@@ -16,7 +16,7 @@ import {
 import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./repairs.js";
 import { todayWeather, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
-const APP_VERSION = "v26";
+const APP_VERSION = "v27";
 import { summarize, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -682,7 +682,7 @@ function repairFormHtml(date) {
     <details class="more">
       <summary>更多欄位（地點、年份、零件、雲端資料夾、工時）</summary>
       <label>地點<input type="text" name="place" list="dl-place" placeholder="例如 南投市南崗工業區"></label>
-      <label>年份<input type="text" name="year" placeholder="例如 103年、未知"></label>
+      <label>年份<input type="text" name="year" placeholder="西元年，例如 2014、未知"></label>
       <label>製造（機台／電控）<input type="text" name="build" placeholder="例如 機台 田豐；電控 中信"></label>
       <label>故障現象<input type="text" name="symptom"></label>
       <label>更換零件（用「；」分開）<input type="text" name="parts" placeholder="例如 FBs-24MAR2-AC；CU-11 380V"></label>
