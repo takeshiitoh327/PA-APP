@@ -2,32 +2,37 @@
 // lives in GitHub; photos and programs stay in the user's Google Drive and
 // are linked by folder URL.
 //
-// 客戶 is who hired the job; 業主 is the end user on site when the job came
-// through a client (e.g. 奕郝 serviced under 田豐's name).
+// Who the job was for: 直接客戶 (hired the user directly) or 客戶 (a client
+// who passed the job on), plus 業主 (the end owner on site, e.g. 奕郝 was
+// serviced under 田豐's name). The heading names whoever hired the job.
+// Several items in one field are joined with "；".
 //
 //   ## 2026-10-29 · 田豐 · 打包機
+//   - 客戶：田豐
 //   - 業主：奕郝
-//   - 地點：南投
+//   - 地點：南投市南崗工業區
 //   - 年份：103年
 //   - 製造：機台 田豐；電控 中信
-//   - 年份：103年
-//   - 現象：…
-//   - 處理：更換 PLC FBs-24MAR2-AC；安裝 103 年舊程式
+//   - 故障原因：…
+//   - 維修內容：更換 PLC FBs-24MAR2-AC；安裝 103 年舊程式
 //   - 零件：FBs-24MAR2-AC；CU-11 380V
 //   - 資料夾：https://drive.google.com/drive/folders/…
 
 export const FIELDS = [
+  ["direct", "直接客戶"],
+  ["client", "客戶"],
   ["owner", "業主"],
   ["place", "地點"],
   ["year", "年份"],
   ["build", "製造"],
   ["symptom", "現象"],
-  ["cause", "原因"],
-  ["fix", "處理"],
+  ["cause", "故障原因"],
+  ["fix", "維修內容"],
   ["parts", "零件"],
   ["folder", "資料夾"],
 ];
-const LABEL_TO_KEY = Object.fromEntries(FIELDS.map(([k, l]) => [l, k]));
+// 原因 and 處理 are the labels used before 2026-11-03.
+const LABEL_TO_KEY = { ...Object.fromEntries(FIELDS.map(([k, l]) => [l, k])), 原因: "cause", 處理: "fix" };
 const HEAD_RE = /^## (\d{4}-\d{2}-\d{2}) · (.+?) · (.+)$/;
 const FIELD_RE = /^- (.+?)：(.*)$/;
 
