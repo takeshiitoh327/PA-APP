@@ -3,6 +3,9 @@
 //
 //   ## 2026-10-28 (Wed) · mood 4
 //   - 13:30 · work · 3h · 製作控制盤 #client [panels=2]
+//   - 08:00 · work · 3h50m · 迎廣 50T 配盤 @迎廣50T #迎廣 #wiring
+//
+// "@name" is the project; one phase tag (see PHASES) says which part of it.
 
 export const CATEGORIES = [
   ["work", "工作"],
@@ -19,6 +22,19 @@ export const CATEGORIES = [
   ["sleep", "睡眠"],
   ["plan", "計畫"],
 ];
+
+// Phases of a panel project, stored as a tag on work entries.
+export const PHASES = [
+  ["layout", "電盤配置"],
+  ["wiring", "配盤"],
+  ["program", "程式編寫"],
+  ["test", "試機"],
+  ["other", "其他"],
+];
+
+export function normalizeProject(name) {
+  return String(name || "").trim().replace(/^@/, "").replace(/\s+/g, "");
+}
 
 export const EXERCISES = [
   ["run", "跑步"],
@@ -44,6 +60,7 @@ const DURATION_RE = /^(?:(\d+(?:\.\d+)?)h)?(?:(\d+)m)?$/;
 const TAG_RE = /(?<![\p{L}\p{N}_&])#([\p{L}\p{N}_-]+)/gu;
 const METRIC_RE = /\[([\p{L}\p{N}_-]+)=(-?\d+(?:\.\d+)?)\]/gu;
 const DUE_RE = /\(due (\d{4}-\d{2}-\d{2})\)/;
+const PROJECT_RE = /(?<![\p{L}\p{N}_.])@([\p{L}\p{N}_.\-]+)/u;
 const WEATHER_RE = /^> 天氣：(.*)$/;
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -82,12 +99,14 @@ export function parseEntryLine(line) {
   const metrics = {};
   for (const [, k, v] of text.matchAll(METRIC_RE)) metrics[k] = (metrics[k] || 0) + parseFloat(v);
   const due = DUE_RE.exec(text);
+  const project = PROJECT_RE.exec(text);
   return {
     time: m[1].padStart(5, "0"),
     category: m[2].toLowerCase(),
     hours,
     text,
-    plain: text.replace(TAG_RE, "").replace(METRIC_RE, "").replace(DUE_RE, "").replace(/\s+/g, " ").trim(),
+    plain: text.replace(TAG_RE, "").replace(METRIC_RE, "").replace(DUE_RE, "").replace(new RegExp(PROJECT_RE.source, "gu"), "").replace(/\s+/g, " ").trim(),
+    project: project ? project[1] : null,
     tags,
     metrics,
     due: due ? due[1] : null,
@@ -124,11 +143,12 @@ export function parseMonth(text) {
   return days;
 }
 
-export function buildEntryLine({ time, category, hours, text, tags = [], metrics = [], due }) {
+export function buildEntryLine({ time, category, hours, text, tags = [], metrics = [], due, project }) {
   const parts = [`- ${time} · ${category}`];
   if (hours) parts.push(formatDuration(hours));
   let body = text.replace(/\s*\n\s*/g, "；").trim();
   if (due) body += ` (due ${due})`;
+  if (normalizeProject(project)) body += ` @${normalizeProject(project)}`;
   for (const t of tags) body += ` #${t}`;
   for (const [k, v] of metrics) body += ` [${k}=${v}]`;
   parts.push(body);

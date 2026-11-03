@@ -3,6 +3,7 @@ import {
   CATEGORIES,
   CATEGORY_LABEL,
   EXERCISES,
+  PHASES,
   parseMonth,
   monthPath,
   buildEntryLine,
@@ -17,8 +18,8 @@ import * as outbox from "./outbox.js";
 import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./repairs.js";
 import { todayWeather, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
-const APP_VERSION = "v28";
-import { summarize, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
+const APP_VERSION = "v29";
+import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
 const TZ = "Asia/Taipei";
@@ -301,6 +302,7 @@ async function viewOutbox() {
 
 const routes = {
   outbox: viewOutbox,
+  projects: viewProjects,
   repairs: viewRepairs,
   today: viewToday,
   brief: (d) => viewToday(d, "brief"),
@@ -313,7 +315,7 @@ const routes = {
 async function route() {
   const [, name = "today", arg] = location.hash.split("/");
   const handler = routes[name] || viewToday;
-  document.querySelectorAll("nav.tabs a").forEach((a) => a.classList.toggle("active", a.dataset.tab === (name === "brief" || name === "review" ? "today" : name)));
+  document.querySelectorAll("nav.tabs a").forEach((a) => a.classList.toggle("active", a.dataset.tab === (name === "brief" || name === "review" ? "today" : name === "projects" ? "stats" : name)));
   if (!settings.token && name !== "settings") return viewSettings(null, true);
   try {
     await handler(arg && /^\d{4}-\d{2}-\d{2}$/.test(arg) ? arg : null);
@@ -576,6 +578,11 @@ async function viewLog(date) {
         ).join("")}</div>
       </label>
       <label>內容<textarea name="text" rows="2" required placeholder="例如：製作控制盤，兩盤"></textarea></label>
+      <div id="project-row">
+        <label>專案（不含維修）<input type="text" name="project" list="project-names" placeholder="例如 迎廣50T"></label>
+        <datalist id="project-names">${[...new Set(all.entries.map((e) => e.project).filter(Boolean))].map((p) => `<option value="${esc(p)}">`).join("")}</datalist>
+        <div class="chips" id="phase-chips">${PHASES.map(([v, l]) => `<button type="button" class="chip" data-phase="${v}">${l}</button>`).join("")}</div>
+      </div>
       <label id="due-row" hidden>到期日<input type="date" name="due" value="${addDays(date, 1)}"></label>
       <label>標籤（客戶、專案；用空格分開）<input type="text" name="tags" placeholder="例如：客戶名 panel"></label>
       ${recentTags.length ? `<div class="chips small" id="tag-chips">${recentTags.map((t) => `<button type="button" class="chip" data-tag="${esc(t)}">#${esc(t)}</button>`).join("")}</div>` : ""}
@@ -594,11 +601,21 @@ async function viewLog(date) {
   const form = document.getElementById("entry-form");
   let category = "work";
   let editing = null;
+  let phase = null;
+  const setPhase = (p) => {
+    phase = p;
+    document.querySelectorAll("#phase-chips .chip").forEach((b) => b.classList.toggle("on", b.dataset.phase === p));
+  };
+  document.getElementById("phase-chips").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-phase]");
+    if (b) setPhase(phase === b.dataset.phase ? null : b.dataset.phase);
+  });
 
   const setCategory = (c) => {
     category = c;
     document.querySelectorAll("#cat-chips .chip").forEach((b) => b.classList.toggle("on", b.dataset.cat === c));
     document.getElementById("due-row").hidden = c !== "plan";
+    document.getElementById("project-row").hidden = !["work", "meeting"].includes(c);
   };
   document.getElementById("cat-chips").addEventListener("click", (ev) => {
     const b = ev.target.closest("[data-cat]");
@@ -728,9 +745,15 @@ async function viewLog(date) {
       category,
       hours,
       text: form.text.value.trim(),
-      tags: [...new Set(form.tags.value.split(/\s+/).filter(Boolean).map(normalizeTag))],
+      tags: [
+        ...new Set([
+          ...form.tags.value.split(/\s+/).filter(Boolean).map(normalizeTag).filter((t) => !PHASES.some(([k]) => k === t)),
+          ...(["work", "meeting"].includes(category) && form.project.value.trim() && phase ? [phase] : []),
+        ]),
+      ],
       metrics,
       due: category === "plan" ? form.due.value : null,
+      project: ["work", "meeting"].includes(category) ? form.project.value : "",
     });
     const old = editing;
     const ok = await busy(document.getElementById("save-btn"), () =>
@@ -754,7 +777,9 @@ async function viewLog(date) {
       form.end.value = endTime(e.time, e.hours) || "";
       form.dh.value = form.dm.value = "";
       form.text.value = e.plain;
-      form.tags.value = e.tags.filter((t) => !["done", "dropped", "moved"].includes(t)).join(" ");
+      form.tags.value = e.tags.filter((t) => !["done", "dropped", "moved"].includes(t) && !(e.project && PHASES.some(([k]) => k === t))).join(" ");
+      form.project.value = e.project || "";
+      setPhase(e.project ? (PHASES.find(([k]) => e.tags.includes(k)) || [null])[0] : null);
       const [m] = Object.entries(e.metrics);
       form.mname.value = m ? m[0] : "";
       form.mval.value = m ? m[1] : "";
@@ -1010,6 +1035,64 @@ async function viewRepairs(openDate) {
 
 let statsRange = { kind: "week", from: null, to: null };
 
+function statsSwitch(on) {
+  return `<div class="segmented stats-switch">
+    <a href="#/stats" class="${on === "stats" ? "on" : ""}">時間統計</a>
+    <a href="#/projects" class="${on === "projects" ? "on" : ""}">🏗️ 專案工時</a>
+  </div>`;
+}
+
+let projectRange = "all";
+
+async function viewProjects() {
+  titleEl.textContent = "專案工時";
+  loading();
+  const { entries } = await allLogs();
+  const today = todayTaipei();
+  const [start, end] = projectRange === "all" ? ["0000-01-01", "9999-12-31"] : resolveRange(projectRange, today);
+  const s = projectSummary(entries, start, end, PHASES);
+  const ranges = [["month", "本月"], ["year", "今年"], ["all", "全部"]];
+  const phaseLabel = Object.fromEntries(PHASES);
+  const md = (d) => d.slice(5).replace("-", "/");
+  view.innerHTML = `${statsSwitch("projects")}
+  <div class="segmented">${ranges.map(([k, l]) => `<button class="${projectRange === k ? "on" : ""}" data-prange="${k}">${l}</button>`).join("")}</div>
+  <p class="range-label muted">專案共 ${fmtH(s.total)}・${s.list.length} 個專案（維修不算在內）</p>
+  ${
+    s.list.length
+      ? s.list
+          .map((p) => {
+            const rows = PHASES.filter(([k]) => p.phases[k]);
+            return `<section class="card project">
+      <div class="card-head"><h2>${esc(p.name)}</h2><strong class="project-total">${fmtH(p.hours)}</strong></div>
+      <p class="muted project-span">${p.first === p.last ? md(p.first) : `${md(p.first)} – ${md(p.last)}`}・${p.entries.length} 筆</p>
+      <div class="phase-bars">${rows
+        .map(
+          ([k, l]) => `<div class="phase-row"><span class="phase-name">${l}</span>
+          <span class="phase-bar"><i style="width:${Math.max(3, (p.phases[k] / p.hours) * 100)}%"></i></span>
+          <span class="phase-h">${fmtH(p.phases[k])}<small>${Math.round((p.phases[k] / p.hours) * 100)}%</small></span></div>`
+        )
+        .join("")}</div>
+      <details class="project-entries"><summary>明細</summary><ul>${p.entries
+        .map((e) => `<li><a href="#/log/${e.date}">${md(e.date)}</a> ${e.time}・${esc(phaseLabel[e.phase])}・${formatDuration(e.hours)}<br><span class="muted">${esc(e.plain)}</span></li>`)
+        .join("")}</ul></details>
+    </section>`;
+          })
+          .join("")
+      : `<section class="card"><p class="muted">這段期間還沒有標上專案的工作紀錄。</p></section>`
+  }
+  ${
+    s.untrackedCount
+      ? `<section class="card"><p class="muted">另有 ${s.untrackedCount} 筆工作（${fmtH(s.untracked)}）沒有標專案，不在上面的統計裡。到「日誌」編輯那筆紀錄，填「專案」並選工作項目即可。</p></section>`
+      : ""
+  }`;
+  view.querySelector(".segmented:not(.stats-switch)").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-prange]");
+    if (!b) return;
+    projectRange = b.dataset.prange;
+    viewProjects();
+  });
+}
+
 async function viewStats() {
   titleEl.textContent = "統計";
   loading();
@@ -1038,7 +1121,7 @@ async function viewStats() {
   };
   const c = s.commitments;
 
-  view.innerHTML = `
+  view.innerHTML = `${statsSwitch("stats")}
   <div class="segmented" role="tablist">${ranges
     .map(([k, l]) => `<button class="${statsRange.kind === k ? "on" : ""}" data-range="${k}">${l}</button>`)
     .join("")}</div>
@@ -1087,7 +1170,7 @@ async function viewStats() {
   }
   <section class="card"><h2>熱力圖（最近一年）</h2>${heatmap(entries, today)}</section>`;
 
-  view.querySelector(".segmented").addEventListener("click", (ev) => {
+  view.querySelector(".segmented:not(.stats-switch)").addEventListener("click", (ev) => {
     const b = ev.target.closest("[data-range]");
     if (!b) return;
     statsRange = { ...statsRange, kind: b.dataset.range };

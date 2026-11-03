@@ -150,3 +150,33 @@ export function openCommitments(entries, by) {
     .filter((e) => e.category === "plan" && e.status === "open" && e.due && e.due <= by)
     .sort((a, b) => a.due.localeCompare(b.due));
 }
+
+// Hours per project and phase. Repairs (#repair) and sleep are left out.
+export function projectSummary(entries, start, end, phases) {
+  const keys = phases.map(([k]) => k);
+  const projects = new Map();
+  let untracked = 0;
+  let untrackedCount = 0;
+  for (const e of entries) {
+    if (e.date < start || e.date > end || !e.hours) continue;
+    if (e.category === "sleep" || e.tags.includes("repair")) continue;
+    if (!e.project) {
+      if (e.category === "work") {
+        untracked += e.hours;
+        untrackedCount++;
+      }
+      continue;
+    }
+    const p = projects.get(e.project) || { name: e.project, hours: 0, phases: {}, first: e.date, last: e.date, entries: [] };
+    const phase = keys.find((k) => e.tags.includes(k)) || "other";
+    p.hours += e.hours;
+    p.phases[phase] = (p.phases[phase] || 0) + e.hours;
+    if (e.date < p.first) p.first = e.date;
+    if (e.date > p.last) p.last = e.date;
+    p.entries.push({ ...e, phase });
+    projects.set(e.project, p);
+  }
+  const list = [...projects.values()].sort((a, b) => b.last.localeCompare(a.last) || b.hours - a.hours);
+  for (const p of list) p.entries.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  return { list, total: list.reduce((a, p) => a + p.hours, 0), untracked, untrackedCount };
+}
