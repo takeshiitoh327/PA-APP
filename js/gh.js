@@ -102,17 +102,26 @@ export class Repo {
     });
   }
 
-  // Read-modify-write with one retry when someone else pushed in between.
+  // Read-modify-write. GitHub can serve the old copy of a file for a few
+  // seconds after a write, so the copy this app just wrote is remembered and
+  // used instead, and a conflict is retried a few times with a short wait.
   async updateFile(path, transform, message) {
+    this.written = this.written || new Map();
     for (let attempt = 0; ; attempt++) {
-      const current = await this.getFile(path);
+      let current = await this.getFile(path);
+      const mine = this.written.get(path);
+      if (mine && current && current.sha === mine.before) current = { text: mine.text, sha: mine.sha };
       const next = transform(current ? current.text : null);
       if (current && next === current.text) return;
       try {
-        await this.putFile(path, next, current && current.sha, message);
+        const res = await this.putFile(path, next, current && current.sha, message);
+        if (res && res.content && res.content.sha) this.written.set(path, { before: current && current.sha, sha: res.content.sha, text: next });
         return;
       } catch (e) {
-        if (attempt === 0 && (e.status === 409 || e.status === 422)) continue;
+        if (attempt < 3 && (e.status === 409 || e.status === 422)) {
+          await new Promise((ok) => setTimeout(ok, 1000 * 2 ** attempt));
+          continue;
+        }
         throw e;
       }
     }

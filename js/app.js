@@ -16,7 +16,7 @@ import {
 import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./repairs.js";
 import { todayWeather, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
-const APP_VERSION = "v23";
+const APP_VERSION = "v24";
 import { summarize, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -83,6 +83,7 @@ function errorText(e) {
   if (e.status === 401) return "Token 無效或已過期，請到設定更新";
   if (e.status === 403) return "Token 權限不足（需要 Contents 讀寫）或已達 API 上限";
   if (e instanceof TypeError) return "網路連線失敗，請稍後再試";
+  if (e.status === 409 || e.status === 422) return "GitHub 還在更新剛剛的資料，請等幾秒再按一次儲存";
   return e.message || String(e);
 }
 

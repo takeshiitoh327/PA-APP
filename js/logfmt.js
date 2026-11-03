@@ -180,7 +180,21 @@ function newFile(date) {
 export function addEntry(text, date, line) {
   const lines = text ? text.replace(/\n*$/, "").split("\n") : newFile(date);
   const day = ensureDay(lines, date);
-  const key = sortKey(parseEntryLine(line));
+  const added = parseEntryLine(line);
+  // The same line twice in a day is a double tap: keep one.
+  if (lines.slice(day.start + 1, day.end).includes(line)) return finish(lines);
+  // One sleep per night: a new sleep entry replaces the day's earlier one.
+  if (added && added.category === "sleep") {
+    const old = lines.slice(day.start + 1, day.end).findIndex((l) => {
+      const e = parseEntryLine(l);
+      return e && e.category === "sleep";
+    });
+    if (old >= 0) {
+      lines.splice(day.start + 1 + old, 1);
+      return addEntry(finish(lines), date, line);
+    }
+  }
+  const key = sortKey(added);
   let at = day.start + 1;
   while (at < day.end && WEATHER_RE.test(lines[at])) at++;
   for (let i = day.start + 1; i < day.end; i++) {
