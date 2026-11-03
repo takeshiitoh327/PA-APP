@@ -29,6 +29,7 @@ export const PHASES = [
   ["wiring", "配盤配線"],
   ["program", "程式編寫"],
   ["test", "試機"],
+  ["bom", "BOM表報價"],
   ["other", "其他"],
 ];
 
