@@ -16,7 +16,7 @@ import {
 import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./repairs.js";
 import { todayWeather, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
-const APP_VERSION = "v25";
+const APP_VERSION = "v26";
 import { summarize, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -642,6 +642,14 @@ async function allRepairs() {
 }
 
 let repairQuery = "";
+const REPAIR_ORDER_KEY = "pa-app.repair-order";
+function repairOrder() {
+  try {
+    return localStorage.getItem(REPAIR_ORDER_KEY) || "old";
+  } catch {
+    return "old";
+  }
+}
 
 // One checklist row: a tick box, then a text box. Typing ticks the box.
 function checkRow(name, label, value = "", placeholder = "") {
@@ -715,7 +723,10 @@ async function viewRepairs(openDate) {
   const list = await allRepairs();
   const render = () => {
     const q = repairQuery.trim().toLowerCase();
-    const hits = q ? list.filter((x) => Object.values(x).join(" ").toLowerCase().includes(q)) : list;
+    const hits = (q ? list.filter((x) => Object.values(x).join(" ").toLowerCase().includes(q)) : list.slice()).sort((a, b) =>
+      repairOrder() === "old" ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date)
+    );
+    document.querySelectorAll("#repair-order button").forEach((btn) => btn.classList.toggle("on", btn.dataset.order === repairOrder()));
     document.getElementById("repair-list").innerHTML = hits.length
       ? hits.map(repairCard).join("")
       : `<section class="card"><p class="muted">${q ? "找不到符合的維修紀錄。" : "還沒有維修紀錄，按上面的「＋ 新增維修紀錄」。"}</p></section>`;
@@ -727,9 +738,19 @@ async function viewRepairs(openDate) {
     </details>
   </section>
   <label class="search">搜尋（客戶、業主、地點、機台、零件…）<input type="search" id="repair-q" value="${esc(repairQuery)}" placeholder="例如 田豐、奕郝、FBs"></label>
-  <p class="muted range-label">共 ${list.length} 筆</p>
+  <div class="list-head"><p class="muted range-label">共 ${list.length} 筆</p>
+    <div class="segmented" id="repair-order"><button type="button" data-order="old">舊→新</button><button type="button" data-order="new">新→舊</button></div>
+  </div>
   <div id="repair-list"></div>`;
   render();
+  document.getElementById("repair-order").addEventListener("click", (ev) => {
+    const btn = ev.target.closest("[data-order]");
+    if (!btn) return;
+    try {
+      localStorage.setItem(REPAIR_ORDER_KEY, btn.dataset.order);
+    } catch {}
+    render();
+  });
   document.getElementById("repair-q").addEventListener("input", (ev) => {
     repairQuery = ev.target.value;
     render();
