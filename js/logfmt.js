@@ -27,7 +27,9 @@ export const CATEGORIES = [
 export const PHASES = [
   ["layout", "製作電盤"],
   ["wiring", "配盤配線"],
+  ["front-wiring", "面板配線"],
   ["program", "程式編寫"],
+  ["shop-test", "公司測試"],
   ["test", "試機"],
   ["bom", "BOM表報價"],
   ["other", "其他"],
