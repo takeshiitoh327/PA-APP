@@ -20,7 +20,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { todayWeather, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.36";
+const APP_VERSION = "V0.37";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -318,7 +318,7 @@ const routes = {
 async function route() {
   const [, name = "today", arg] = location.hash.split("/");
   const handler = routes[name] || viewToday;
-  document.querySelectorAll("nav.tabs a").forEach((a) => a.classList.toggle("active", a.dataset.tab === (name === "brief" || name === "review" ? "today" : name === "projects" ? "stats" : name === "doms" ? "log" : name)));
+  document.querySelectorAll("nav.tabs a").forEach((a) => a.classList.toggle("active", a.dataset.tab === (name === "brief" || name === "review" ? "today" : name === "projects" ? "stats" : name)));
   if (!settings.token && name !== "settings") return viewSettings(null, true);
   try {
     await handler(arg && /^\d{4}-\d{2}-\d{2}$/.test(arg) ? arg : null);
