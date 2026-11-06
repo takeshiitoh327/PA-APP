@@ -20,7 +20,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { todayWeather, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.38";
+const APP_VERSION = "V0.39";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -884,6 +884,7 @@ async function viewDoms(date) {
       gym ? (sinceGym === 0 ? `今天有重訓（${esc(gym.plain)}）` : `距上次重訓 ${sinceGym} 天（${md(gym.date)} ${esc(gym.plain)}）`) : "還沒有重訓紀錄（日誌 → 快速記錄 → 🏃 運動 → 重訓）"
     }</p>
     <div class="body-maps">${muscleSvg(FRONT, levels, "正面")}${muscleSvg(BACK, levels, "背面")}</div>
+    <p class="muted hint doms-side">正面圖像照鏡子：圖的左邊是你的右側。背面圖的左邊就是你的左側。</p>
     <div class="doms-legend">${DOMS_LEVELS.map(([v, l]) => `<span><i class="lv${v}"></i>${l}</span>`).join("")}</div>
     <div class="chips" id="doms-list"></div>
     <div class="form-actions">
