@@ -20,7 +20,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { todayWeather, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.35";
+const APP_VERSION = "V0.36";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -1292,13 +1292,13 @@ async function viewStats() {
     </dl></section>`
       : ""
   }
-  ${
+  <section class="card"><h2>💪 肌肉痠痛</h2>${
     s.doms.days
-      ? `<section class="card"><h2>💪 肌肉痠痛</h2><p class="muted totals">${s.doms.days} 天有記錄・<a href="#/doms">去記錄</a></p>${barList(
+      ? `<p class="muted totals">${s.doms.days} 天有記錄・<a href="#/doms">去記錄</a></p>${barList(
           s.doms.byMuscle.map(([k, n]) => ({ label: MUSCLE_LABEL[k] || k, value: n, text: `${n} 天`, color: "#ef8a3c" }))
-        )}</section>`
-      : ""
-  }
+        )}`
+      : `<p class="muted">這段期間還沒有痠痛紀錄。</p><div class="form-actions"><a class="btn small" href="#/doms">💪 記錄今天的痠痛</a></div>`
+  }</section>
   ${
     s.exercise.sessions
       ? `<section class="card"><h2>🏃 運動</h2><p class="muted totals">共 ${s.exercise.sessions} 次・${formatDuration(s.exercise.hours)}</p>${barList(
