@@ -59,6 +59,8 @@ export function summarize(days, entries, start, end, today) {
   const hours = {};
   const counts = {};
   const metrics = {};
+  const doms = {};
+  let domsDays = 0;
   const tagCount = {};
   const tagHours = {};
   const hoursByDay = {};
@@ -79,7 +81,15 @@ export function summarize(days, entries, start, end, today) {
       exercise.byType[type].h += e.hours || 0;
     }
     counts[e.category] = (counts[e.category] || 0) + 1;
-    for (const [k, v] of Object.entries(e.metrics)) metrics[k] = (metrics[k] || 0) + v;
+    for (const [k, v] of Object.entries(e.metrics)) {
+      // Soreness levels (doms_*) are counted per muscle below, not totalled.
+      if (k.startsWith("doms_")) {
+        if (v > 0) doms[k.slice(5)] = (doms[k.slice(5)] || 0) + 1;
+        continue;
+      }
+      metrics[k] = (metrics[k] || 0) + v;
+    }
+    if (e.tags.includes("doms")) domsDays++;
     for (const t of e.category === "exercise" ? [] : e.tags) {
       if (t === "done" || t === "dropped" || t === "moved") continue;
       tagCount[t] = (tagCount[t] || 0) + 1;
@@ -126,6 +136,7 @@ export function summarize(days, entries, start, end, today) {
         }
       : null,
     exercise,
+    doms: { days: domsDays, byMuscle: Object.entries(doms).sort((a, b) => b[1] - a[1]) },
     commitments: {
       due: plans.length,
       done: plans.filter((e) => e.status === "done").length,

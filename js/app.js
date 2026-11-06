@@ -15,11 +15,12 @@ import {
   formatDuration,
 } from "./logfmt.js";
 import * as outbox from "./outbox.js";
+import { MUSCLES, FRONT, BACK } from "./muscles.js";
 import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./repairs.js";
 import { todayWeather, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.33";
+const APP_VERSION = "V0.34";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -302,6 +303,7 @@ async function viewOutbox() {
 // ---------- views ----------
 
 const routes = {
+  doms: viewDoms,
   outbox: viewOutbox,
   projects: viewProjects,
   repairs: viewRepairs,
@@ -316,7 +318,7 @@ const routes = {
 async function route() {
   const [, name = "today", arg] = location.hash.split("/");
   const handler = routes[name] || viewToday;
-  document.querySelectorAll("nav.tabs a").forEach((a) => a.classList.toggle("active", a.dataset.tab === (name === "brief" || name === "review" ? "today" : name === "projects" ? "stats" : name)));
+  document.querySelectorAll("nav.tabs a").forEach((a) => a.classList.toggle("active", a.dataset.tab === (name === "brief" || name === "review" ? "today" : name === "projects" ? "stats" : name === "doms" ? "log" : name)));
   if (!settings.token && name !== "settings") return viewSettings(null, true);
   try {
     await handler(arg && /^\d{4}-\d{2}-\d{2}$/.test(arg) ? arg : null);
@@ -338,8 +340,8 @@ function dateNav(date, base) {
 function entryRow(e, { actions = false } = {}) {
   const end = endTime(e.time, e.hours);
   const tags = e.tags.filter((t) => !["done", "dropped", "moved"].includes(t));
-  // sleep_q is already shown as 佳/普通/差 in the text.
-  const metrics = Object.entries(e.metrics).filter(([k]) => k !== "sleep_q");
+  // sleep_q and doms_* are already spelled out in the text.
+  const metrics = Object.entries(e.metrics).filter(([k]) => k !== "sleep_q" && !k.startsWith("doms_"));
   const status = e.category === "plan" ? (e.status === "done" ? "✓ 完成" : e.status === "dropped" ? "✗ 取消" : e.due ? `到期 ${e.due.slice(5).replace("-", "/")}` : "") : "";
   return `<li class="entry ${e.category === "plan" ? `plan ${e.status}` : ""}">
     <div class="entry-time">${e.time}${end ? `<i class="time-line" aria-hidden="true"></i><span><span class="sr-only">至 </span>${end}</span>` : ""}</div>
@@ -531,6 +533,7 @@ async function viewLog(date) {
       <button type="button" class="chip" data-quick="sleep">😴 睡眠</button>
       <button type="button" class="chip" data-quick="exercise">🏃 運動</button>
       <a class="chip" href="#/repairs/${date}">🔧 維修</a>
+      <a class="chip" href="#/doms/${date}">💪 痠痛</a>
     </div>
     <form id="sleep-form" class="quick-form" hidden autocomplete="off">
       <p class="muted hint">睡眠記在起床的這一天（${zhDate(date, false)}）。</p>
@@ -816,6 +819,129 @@ async function viewLog(date) {
 function daysToMinutes(t) {
   const [h, m] = t.split(":").map(Number);
   return h * 60 + m;
+}
+
+// ---------- muscle soreness (DOMS) ----------
+
+// One entry per day: "- HH:MM · health · 肌肉痠痛：胸肌 中、股四頭肌 輕 #doms [doms_chest=2] [doms_quads=1]"
+const DOMS_LEVELS = [[1, "輕"], [2, "中"], [3, "重"]];
+const MUSCLE_LABEL = Object.fromEntries(MUSCLES);
+
+function domsOf(e) {
+  const out = {};
+  for (const [k, v] of Object.entries(e.metrics)) if (k.startsWith("doms_") && v > 0) out[k.slice(5)] = Math.min(3, Math.round(v));
+  return out;
+}
+
+function domsText(levels) {
+  return MUSCLES.filter(([k]) => levels[k])
+    .map(([k, l]) => `${l} ${DOMS_LEVELS[levels[k] - 1][1]}`)
+    .join("、");
+}
+
+function muscleSvg(shapes, levels, label) {
+  return `<figure class="body-map"><svg viewBox="0 0 100 220" role="group" aria-label="${label}">${shapes
+    .map(([k, pts]) =>
+      k
+        ? `<polygon class="m lv${levels[k] || 0}" data-m="${k}" points="${pts}"><title>${esc(MUSCLE_LABEL[k])}</title></polygon>`
+        : `<polygon class="m-off" points="${pts}"/>`
+    )
+    .join("")}</svg><figcaption>${label}</figcaption></figure>`;
+}
+
+async function viewDoms(date) {
+  date = date || todayTaipei();
+  titleEl.textContent = "肌肉痠痛";
+  loading();
+  const [month, all] = await Promise.all([getMonth(date.slice(0, 7)), allLogs()]);
+  const day = month.days.get(date);
+  const existing = day ? day.entries.find((e) => e.tags.includes("doms")) : null;
+  const levels = existing ? domsOf(existing) : {};
+  const gym = all.entries
+    .filter((e) => e.category === "exercise" && e.tags.includes("gym") && e.date <= date)
+    .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time))[0];
+  const history = all.entries
+    .filter((e) => e.tags.includes("doms") && e.date !== date)
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 14);
+  const md = (d) => d.slice(5).replace("-", "/");
+  const sinceGym = gym ? daysBetween(gym.date, date) : null;
+
+  const render = () => {
+    view.querySelectorAll("polygon.m").forEach((p) => (p.className.baseVal = `m lv${levels[p.dataset.m] || 0}`));
+    const text = domsText(levels);
+    document.getElementById("doms-list").innerHTML = text
+      ? MUSCLES.filter(([k]) => levels[k])
+          .map(([k, l]) => `<button type="button" class="chip doms-chip lv${levels[k]}" data-m="${k}">${l}・${DOMS_LEVELS[levels[k] - 1][1]}</button>`)
+          .join("")
+      : `<span class="muted">點圖上的肌肉：點一下「輕」，再點「中」、「重」，第四下取消。</span>`;
+  };
+
+  view.innerHTML = `${dateNav(date, "doms")}
+  <section class="card">
+    <div class="card-head"><h2>💪 延遲性肌肉痠痛</h2>${existing ? `<span class="muted">已記錄</span>` : ""}</div>
+    <p class="muted doms-gym">${
+      gym ? (sinceGym === 0 ? `今天有重訓（${esc(gym.plain)}）` : `距上次重訓 ${sinceGym} 天（${md(gym.date)} ${esc(gym.plain)}）`) : "還沒有重訓紀錄（日誌 → 快速記錄 → 🏃 運動 → 重訓）"
+    }</p>
+    <div class="body-maps">${muscleSvg(FRONT, levels, "正面")}${muscleSvg(BACK, levels, "背面")}</div>
+    <div class="doms-legend">${DOMS_LEVELS.map(([v, l]) => `<span><i class="lv${v}"></i>${l}</span>`).join("")}</div>
+    <div class="chips" id="doms-list"></div>
+    <div class="form-actions">
+      ${existing ? `<button type="button" class="btn ghost danger" id="doms-clear">刪除這天的紀錄</button>` : ""}
+      <button type="button" class="btn primary" id="doms-save">儲存</button>
+    </div>
+  </section>
+  ${
+    history.length
+      ? `<section class="card"><h2>最近的痠痛紀錄</h2><ul class="doms-history">${history
+          .map((e) => `<li><a href="#/doms/${e.date}">${md(e.date)}</a> ${esc(domsText(domsOf(e)))}</li>`)
+          .join("")}</ul></section>`
+      : ""
+  }`;
+  render();
+
+  const bump = (k) => {
+    levels[k] = ((levels[k] || 0) + 1) % 4;
+    if (!levels[k]) delete levels[k];
+    render();
+  };
+  view.querySelector(".body-maps").addEventListener("click", (ev) => {
+    const p = ev.target.closest("polygon.m");
+    if (p) bump(p.dataset.m);
+  });
+  document.getElementById("doms-list").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-m]");
+    if (b) bump(b.dataset.m);
+  });
+  const finish = async (btn, change, done) => {
+    btn.disabled = true;
+    try {
+      await writeLog(date, change);
+      toast(done);
+      viewDoms(date);
+    } catch (e) {
+      toast(errorText(e), true);
+      btn.disabled = false;
+    }
+  };
+  document.getElementById("doms-save").addEventListener("click", (ev) => {
+    const text = domsText(levels);
+    if (!text) {
+      if (existing) return finish(ev.target, { a: "replace", old: existing.line, line: null }, "已清除這天的痠痛紀錄");
+      return toast("還沒有選肌肉", true);
+    }
+    const line = buildEntryLine({
+      time: existing ? existing.time : nowTaipei(1),
+      category: "health",
+      text: `肌肉痠痛：${text}`,
+      tags: ["doms"],
+      metrics: MUSCLES.filter(([k]) => levels[k]).map(([k]) => [`doms_${k}`, levels[k]]),
+    });
+    finish(ev.target, existing ? { a: "replace", old: existing.line, line } : { a: "add", line }, "痠痛已記錄");
+  });
+  document.getElementById("doms-clear")?.addEventListener("click", (ev) => {
+    if (confirm("刪除這天的痠痛紀錄？")) finish(ev.target, { a: "replace", old: existing.line, line: null }, "已刪除");
+  });
 }
 
 // ---------- repairs ----------
@@ -1164,6 +1290,13 @@ async function viewStats() {
       <dt>記錄天數</dt><dd>${s.sleep.nights} 晚</dd>
       ${s.sleep.rated ? `<dt>睡眠狀況</dt><dd>${SLEEP_QUALITY.map(([v, l]) => `${l} ${s.sleep.quality[v] || 0}`).join("・")}</dd>` : ""}
     </dl></section>`
+      : ""
+  }
+  ${
+    s.doms.days
+      ? `<section class="card"><h2>💪 肌肉痠痛</h2><p class="muted totals">${s.doms.days} 天有記錄・<a href="#/doms">去記錄</a></p>${barList(
+          s.doms.byMuscle.map(([k, n]) => ({ label: MUSCLE_LABEL[k] || k, value: n, text: `${n} 天`, color: "#ef8a3c" }))
+        )}</section>`
       : ""
   }
   ${
