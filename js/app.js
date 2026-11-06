@@ -20,7 +20,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { todayWeather, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.39";
+const APP_VERSION = "V0.40";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -839,15 +839,25 @@ function domsText(levels) {
     .join("、");
 }
 
-function muscleSvg(shapes, levels, label) {
-  return `<figure class="body-map"><svg viewBox="0 0 100 220" role="group" aria-label="${label}">${shapes
+function muscleSvg(shapes, levels, label, side, hidden) {
+  return `<figure class="body-map" data-side="${side}" ${hidden ? "hidden" : ""}><svg viewBox="0 0 100 ${side === "front" ? 200 : 220}" role="group" aria-label="${label}">${shapes
     .map(([k, pts]) =>
       k
         ? `<polygon class="m lv${levels[k] || 0}" data-m="${k}" points="${pts}"><title>${esc(MUSCLE_LABEL[k])}</title></polygon>`
         : `<polygon class="m-off" points="${pts}"/>`
     )
-    .join("")}</svg><figcaption>${label}</figcaption></figure>`;
+    .join("")}</svg></figure>`;
 }
+
+const DOMS_SIDE_KEY = "pa-app.doms-side";
+function domsSide() {
+  try {
+    return localStorage.getItem(DOMS_SIDE_KEY) === "back" ? "back" : "front";
+  } catch {
+    return "front";
+  }
+}
+const FRONT_KEYS = new Set(FRONT.map(([k]) => k).filter(Boolean));
 
 async function viewDoms(date) {
   date = date || todayTaipei();
@@ -869,6 +879,16 @@ async function viewDoms(date) {
 
   const render = () => {
     view.querySelectorAll("polygon.m").forEach((p) => (p.className.baseVal = `m lv${levels[p.dataset.m] || 0}`));
+    const side = domsSide();
+    const n = { front: 0, back: 0 };
+    for (const k of Object.keys(levels)) n[FRONT_KEYS.has(k) ? "front" : "back"]++;
+    view.querySelectorAll("#doms-sides button").forEach((b) => {
+      b.classList.toggle("on", b.dataset.side === side);
+      b.textContent = `${b.dataset.side === "front" ? "正面" : "背面"}${n[b.dataset.side] ? `（${n[b.dataset.side]}）` : ""}`;
+    });
+    view.querySelectorAll(".body-map").forEach((f) => (f.hidden = f.dataset.side !== side));
+    document.getElementById("doms-side-hint").textContent =
+      side === "front" ? "正面像照鏡子：圖的左邊是你的右側" : "背面：圖的左邊就是你的左側";
     const text = domsText(levels);
     document.getElementById("doms-list").innerHTML = text
       ? MUSCLES.filter(([k]) => levels[k])
@@ -878,19 +898,19 @@ async function viewDoms(date) {
   };
 
   view.innerHTML = `${dateNav(date, "doms")}
-  <section class="card">
-    <div class="card-head"><h2>💪 延遲性肌肉痠痛</h2>${existing ? `<span class="muted">已記錄</span>` : ""}</div>
-    <p class="muted doms-gym">${
-      gym ? (sinceGym === 0 ? `今天有重訓（${esc(gym.plain)}）` : `距上次重訓 ${sinceGym} 天（${md(gym.date)} ${esc(gym.plain)}）`) : "還沒有重訓紀錄（日誌 → 快速記錄 → 🏃 運動 → 重訓）"
-    }</p>
-    <div class="body-maps">${muscleSvg(FRONT, levels, "正面")}${muscleSvg(BACK, levels, "背面")}</div>
-    <p class="muted hint doms-side">正面圖像照鏡子：圖的左邊是你的右側。背面圖的左邊就是你的左側。</p>
+  <section class="card doms-card">
+    <div class="segmented" id="doms-sides"><button type="button" data-side="front">正面</button><button type="button" data-side="back">背面</button></div>
+    <p class="muted hint doms-side" id="doms-side-hint"></p>
+    <div class="body-maps">${muscleSvg(FRONT, levels, "正面", "front", domsSide() !== "front")}${muscleSvg(BACK, levels, "背面", "back", domsSide() !== "back")}</div>
     <div class="doms-legend">${DOMS_LEVELS.map(([v, l]) => `<span><i class="lv${v}"></i>${l}</span>`).join("")}</div>
     <div class="chips" id="doms-list"></div>
     <div class="form-actions">
       ${existing ? `<button type="button" class="btn ghost danger" id="doms-clear">刪除這天的紀錄</button>` : ""}
       <button type="button" class="btn primary" id="doms-save">儲存</button>
     </div>
+    <p class="muted doms-gym">${existing ? "這天已記錄・" : ""}${
+      gym ? (sinceGym === 0 ? `今天有重訓（${esc(gym.plain)}）` : `距上次重訓 ${sinceGym} 天（${md(gym.date)} ${esc(gym.plain)}）`) : "還沒有重訓紀錄（日誌 → 快速記錄 → 🏃 運動 → 重訓）"
+    }</p>
   </section>
   ${
     history.length
@@ -909,6 +929,26 @@ async function viewDoms(date) {
   view.querySelector(".body-maps").addEventListener("click", (ev) => {
     const p = ev.target.closest("polygon.m");
     if (p) bump(p.dataset.m);
+  });
+  const setSide = (side) => {
+    try {
+      localStorage.setItem(DOMS_SIDE_KEY, side);
+    } catch {}
+    render();
+  };
+  document.getElementById("doms-sides").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-side]");
+    if (b) setSide(b.dataset.side);
+  });
+  // Swipe sideways on the map to turn the body around.
+  let touchX = null;
+  const maps = view.querySelector(".body-maps");
+  maps.addEventListener("touchstart", (ev) => (touchX = ev.touches[0].clientX), { passive: true });
+  maps.addEventListener("touchend", (ev) => {
+    if (touchX === null) return;
+    const dx = ev.changedTouches[0].clientX - touchX;
+    touchX = null;
+    if (Math.abs(dx) > 60) setSide(domsSide() === "front" ? "back" : "front");
   });
   document.getElementById("doms-list").addEventListener("click", (ev) => {
     const b = ev.target.closest("[data-m]");
