@@ -30,6 +30,7 @@ export const PHASES = [
   ["front-wiring", "面板配線"],
   ["program", "程式編寫"],
   ["shop-test", "公司測試"],
+  ["site-work", "現場施工"],
   ["test", "現場測試"],
   ["bom", "BOM表報價"],
   ["other", "其他"],
