@@ -17,10 +17,10 @@ import {
 import * as outbox from "./outbox.js";
 import { MUSCLES, FRONT, BACK } from "./muscles.js";
 import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./repairs.js";
-import { todayWeather, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
+import { todayWeather, savedWeather, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.41";
+const APP_VERSION = "V0.42";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -458,10 +458,11 @@ async function viewToday(date, focus) {
 }
 
 // Shows today's weather and, the first time each day, writes it to the log.
-async function loadWeather(date, day, tapped = false) {
+async function loadWeather(date, day, tapped = false, force = false) {
   const card = document.getElementById("weather-card");
   const place = placeSetting();
-  const permission = place.fixed && place.city ? "granted" : await locationPermission();
+  const saved = force ? null : savedWeather();
+  const permission = saved || (place.fixed && place.city) ? "granted" : await locationPermission();
   if (!tapped && permission === "prompt") {
     card.innerHTML = `<div class="weather-ask"><p class="muted">按一下取得目前位置的天氣，之後每天打開會自動顯示。</p>
       <button type="button" class="btn primary" id="weather-ask">📍 取得今天天氣</button></div>`;
@@ -473,7 +474,8 @@ async function loadWeather(date, day, tapped = false) {
     return;
   }
   try {
-    const w = await todayWeather({ useCity: permission === "denied" && !tapped });
+    const w = await todayWeather({ useCity: permission === "denied" && !tapped, force });
+    const readAt = (savedWeather() || {}).time;
     if (!card.isConnected) return;
     const today = describe(w.code);
     const now = describe(w.nowCode);
@@ -483,7 +485,13 @@ async function loadWeather(date, day, tapped = false) {
       <div class="weather-day"><span>${today.icon} ${esc(today.text)}</span><span>${w.min}–${w.max}°C</span>${
         w.rain !== null && w.rain !== undefined ? `<span>降雨 ${w.rain}%</span>` : ""
       }</div>
-    </div>${w.rain >= 50 ? `<p class="weather-tip">☂️ 今天降雨機率高，記得帶傘</p>` : ""}`;
+    </div>${w.rain >= 50 ? `<p class="weather-tip">☂️ 今天降雨機率高，記得帶傘</p>` : ""}
+    <p class="muted weather-when">${readAt ? `${readAt} 讀取・早上和晚上 20:30 後各更新一次` : ""}<button type="button" class="link-btn" id="weather-refresh">立即更新</button></p>`;
+    document.getElementById("weather-refresh").addEventListener("click", () => {
+      requestPositionNow();
+      card.innerHTML = `<p class="muted">取得天氣中…</p>`;
+      loadWeather(date, day, true, true);
+    });
     if (!day || !day.weather) {
       if (navigator.onLine !== false) await writeLog(date, { a: "weather", line: weatherLine(w, nowTaipei(1)) });
     }

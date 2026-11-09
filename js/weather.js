@@ -5,6 +5,43 @@
 const CACHE_KEY = "pa-app.weather";
 const PLACE_KEY = "pa-app.weather-place";
 const LAST_KEY = "pa-app.weather-last";
+const DAY_KEY = "pa-app.weather-day";
+
+// Weather is read twice a day: the first time the app is opened in the
+// morning, and again the first time after the evening review (20:30).
+// Every other opening shows the saved reading without asking for location.
+const EVENING = "20:30";
+
+function taipeiNow() {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+      .formatToParts(new Date())
+      .map((p) => [p.type, p.value])
+  );
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}` };
+}
+
+const slotOf = (time) => (time >= EVENING ? "evening" : "morning");
+
+// Today's saved reading if it is still current: { data, time } or null.
+export function savedWeather() {
+  try {
+    const c = JSON.parse(localStorage.getItem(DAY_KEY) || "null");
+    const now = taipeiNow();
+    if (!c || c.date !== now.date) return null;
+    if (c.slot === "morning" && slotOf(now.time) === "evening") return null;
+    return { data: c.data, time: c.time };
+  } catch {
+    return null;
+  }
+}
+
+function saveDay(data) {
+  try {
+    const now = taipeiNow();
+    localStorage.setItem(DAY_KEY, JSON.stringify({ date: now.date, time: now.time, slot: slotOf(now.time), data }));
+  } catch {}
+}
 
 // Used when the phone's location is unavailable, or always when "fixed" is on.
 export const CITIES = [
@@ -30,7 +67,6 @@ export function savePlaceSetting(setting) {
     sessionStorage.removeItem(CACHE_KEY);
   } catch {}
 }
-const CACHE_MINUTES = 30;
 
 // WMO weather codes used by Open-Meteo.
 const WMO = [
@@ -131,14 +167,6 @@ async function placeName({ lat, lon }) {
   }
 }
 
-function cached() {
-  try {
-    const c = JSON.parse(sessionStorage.getItem(CACHE_KEY) || "null");
-    return c && Date.now() - c.at < CACHE_MINUTES * 60 * 1000 ? c.data : null;
-  } catch {
-    return null;
-  }
-}
 
 function lastPlace() {
   try {
@@ -159,9 +187,11 @@ export async function locationPermission() {
 }
 
 // useCity: skip the phone's location and use the city from the settings.
-export async function todayWeather({ useCity = false } = {}) {
-  const hit = cached();
-  if (hit) return hit;
+export async function todayWeather({ useCity = false, force = false } = {}) {
+  if (!force) {
+    const saved = savedWeather();
+    if (saved) return saved.data;
+  }
   const { city, fixed } = placeSetting();
   const entry = CITIES.find(([name]) => name === city);
   let data;
@@ -196,6 +226,7 @@ export async function todayWeather({ useCity = false } = {}) {
   try {
     sessionStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), data }));
   } catch {}
+  saveDay(data);
   return data;
 }
 
