@@ -64,7 +64,9 @@ const TAG_RE = /(?<![\p{L}\p{N}_&])#([\p{L}\p{N}_-]+)/gu;
 const METRIC_RE = /\[([\p{L}\p{N}_-]+)=(-?\d+(?:\.\d+)?)\]/gu;
 const DUE_RE = /\(due (\d{4}-\d{2}-\d{2})\)/;
 const PROJECT_RE = /(?<![\p{L}\p{N}_.])@([\p{L}\p{N}_.\-]+)/u;
-const WEATHER_RE = /^> 天氣：(.*)$/;
+// Weather lines under a day's heading: "> 天氣：" (morning reading) and
+// "> 晚上天氣：" (evening reading, after 20:30).
+const WEATHER_RE = /^> (晚上)?天氣：(.*)$/;
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export function weekday(date) {
@@ -125,13 +127,14 @@ export function parseMonth(text) {
   for (const line of (text || "").split("\n")) {
     const d = DAY_RE.exec(line);
     if (d) {
-      current = { date: d[1], mood: d[2] ? parseFloat(d[2]) : null, weather: null, entries: [] };
+      current = { date: d[1], mood: d[2] ? parseFloat(d[2]) : null, weather: null, weatherEvening: null, entries: [] };
       days.set(d[1], current);
       continue;
     }
     const w = current && WEATHER_RE.exec(line);
     if (w) {
-      current.weather = w[1];
+      if (w[1]) current.weatherEvening = w[2];
+      else current.weather = w[2];
       continue;
     }
     const e = current && parseEntryLine(line);
@@ -240,13 +243,25 @@ export function replaceEntry(text, date, oldLine, newLine) {
   return addEntry(finish(lines), date, newLine);
 }
 
-// Puts the "> 天氣：…" line right under the day's heading, replacing any earlier one.
+// Puts a weather line right under the day's heading (morning first, then
+// evening), replacing an earlier line of the same kind.
 export function setWeather(text, date, line) {
   const lines = text ? text.replace(/\n*$/, "").split("\n") : newFile(date);
   const day = ensureDay(lines, date);
-  const at = lines.slice(day.start + 1, day.end).findIndex((l) => WEATHER_RE.test(l));
-  if (at >= 0) lines[day.start + 1 + at] = line;
-  else lines.splice(day.start + 1, 0, line);
+  const evening = !!(WEATHER_RE.exec(line) || [])[1];
+  const block = lines.slice(day.start + 1, day.end);
+  const same = block.findIndex((l) => {
+    const m = WEATHER_RE.exec(l);
+    return m && !!m[1] === evening;
+  });
+  if (same >= 0) lines[day.start + 1 + same] = line;
+  else {
+    const morning = block.findIndex((l) => {
+      const m = WEATHER_RE.exec(l);
+      return m && !m[1];
+    });
+    lines.splice(evening && morning >= 0 ? day.start + 2 + morning : day.start + 1, 0, line);
+  }
   return finish(lines);
 }
 

@@ -24,6 +24,10 @@ function taipeiNow() {
 const slotOf = (time) => (time >= EVENING ? "evening" : "morning");
 
 // Today's saved reading if it is still current: { data, time } or null.
+export function isEvening() {
+  return slotOf(taipeiNow().time) === "evening";
+}
+
 export function savedWeather() {
   try {
     const c = JSON.parse(localStorage.getItem(DAY_KEY) || "null");
@@ -231,7 +235,7 @@ export async function todayWeather({ useCity = false, force = false } = {}) {
 }
 
 // The line stored under the day's heading in logs/YYYY-MM.md.
-export function weatherLine(w, time) {
+export function weatherLine(w, time, evening = false) {
   const rain = w.rain === null || w.rain === undefined ? "" : `・降雨 ${w.rain}%`;
-  return `> 天氣：${w.place}${w.fallback ? `（${w.fallback}）` : ""}・${describe(w.code).text}・${w.min}–${w.max}°C${rain}（${time} 記錄）`;
+  return `> ${evening ? "晚上天氣" : "天氣"}：${w.place}${w.fallback ? `（${w.fallback}）` : ""}・${describe(w.code).text}・${w.min}–${w.max}°C${rain}${evening ? `・當時 ${w.now}°C` : ""}（${time} 記錄）`;
 }

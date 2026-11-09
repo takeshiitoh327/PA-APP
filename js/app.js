@@ -17,10 +17,10 @@ import {
 import * as outbox from "./outbox.js";
 import { MUSCLES, FRONT, BACK } from "./muscles.js";
 import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./repairs.js";
-import { todayWeather, savedWeather, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
+import { todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.42";
+const APP_VERSION = "V0.43";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -426,8 +426,10 @@ async function viewToday(date, focus) {
   ${
     isToday
       ? `<section class="card weather" id="weather-card"><p class="muted">取得天氣中…</p></section>`
-      : day && day.weather
-      ? `<section class="card weather"><p class="weather-saved">${esc(day.weather)}</p></section>`
+      : day && (day.weather || day.weatherEvening)
+      ? `<section class="card weather">${day.weather ? `<p class="weather-saved">早上：${esc(day.weather)}</p>` : ""}${
+          day.weatherEvening ? `<p class="weather-saved">晚上：${esc(day.weatherEvening)}</p>` : ""
+        }</section>`
       : ""
   }
   <section class="card" id="sec-log">
@@ -492,12 +494,14 @@ async function loadWeather(date, day, tapped = false, force = false) {
       card.innerHTML = `<p class="muted">取得天氣中…</p>`;
       loadWeather(date, day, true, true);
     });
-    if (!day || !day.weather) {
-      if (navigator.onLine !== false) await writeLog(date, { a: "weather", line: weatherLine(w, nowTaipei(1)) });
+    // One log line in the morning, one in the evening (after 20:30).
+    const evening = isEvening();
+    if (!day || !(evening ? day.weatherEvening : day.weather)) {
+      if (navigator.onLine !== false) await writeLog(date, { a: "weather", line: weatherLine(w, nowTaipei(1), evening) });
     }
   } catch (e) {
-    if (card.isConnected && day && day.weather) {
-      card.innerHTML = `<p class="weather-saved">${esc(day.weather)}</p><p class="muted diag">目前抓不到位置，顯示今天稍早記錄的天氣</p>`;
+    if (card.isConnected && day && (day.weatherEvening || day.weather)) {
+      card.innerHTML = `<p class="weather-saved">${esc(day.weatherEvening || day.weather)}</p><p class="muted diag">目前抓不到位置，顯示今天稍早記錄的天氣</p>`;
       return;
     }
     if (card.isConnected) {
