@@ -20,7 +20,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.44";
+const APP_VERSION = "V0.45";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -100,9 +100,13 @@ function loading(msg = "讀取中…") {
 
 // ---------- data ----------
 
+// Briefs and reviews appear during the day, so a file that was missing is
+// looked up again next time instead of being remembered as missing.
 async function getText(path) {
   if (!cache.files.has(path)) cache.files.set(path, remoteText(path));
-  return cache.files.get(path);
+  const text = await cache.files.get(path);
+  if (text === null) cache.files.delete(path);
+  return text;
 }
 
 // Set when a request fails for lack of network, so the next minute of
@@ -449,11 +453,11 @@ async function viewToday(date, focus) {
   }
   <section class="card md" id="sec-brief">
     <h2>晨報</h2>
-    ${brief ? renderMarkdown(brief) : `<p class="muted">${isToday ? "今天的晨報還沒產生（每天 08:00）。" : "這天沒有晨報。"}</p>`}
+    ${brief ? renderMarkdown(brief) : `<p class="muted">${isToday ? "今天的晨報還沒產生（每天 07:40 後）。" : "這天沒有晨報。"}</p>`}
   </section>
   <section class="card md" id="sec-review">
     <h2>晚上回顧</h2>
-    ${review ? renderMarkdown(review) : `<p class="muted">${isToday ? "晚上回顧還沒產生（每天 21:00）。" : "這天沒有晚上回顧。"}</p>`}
+    ${review ? renderMarkdown(review) : `<p class="muted">${isToday ? "晚上回顧還沒產生（每天 20:30 後）。" : "這天沒有晚上回顧。"}</p>`}
   </section>`;
   if (focus) document.getElementById(`sec-${focus}`)?.scrollIntoView({ block: "start" });
   if (isToday) loadWeather(date, day);
@@ -1661,6 +1665,19 @@ document.addEventListener("pointerdown", (ev) => {
 });
 window.addEventListener("hashchange", route);
 document.getElementById("outbox-btn").addEventListener("click", () => (location.hash = "#/outbox"));
+// Coming back to the app (e.g. from a notification): drop what was read
+// earlier so the brief, review and log are fetched fresh.
+let hiddenAt = 0;
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") hiddenAt = Date.now();
+  else if (hiddenAt && Date.now() - hiddenAt > 60000) {
+    cache.files.clear();
+    cache.months.clear();
+    cache.monthList = null;
+    cache.repairs = null;
+    route();
+  }
+});
 window.addEventListener("online", () => {
   offlineUntil = 0;
   flushOutbox();
