@@ -4,6 +4,9 @@ import {
   CATEGORY_LABEL,
   EXERCISES,
   PHASES,
+  CREW_PHASES,
+  crewOf,
+  withCrew,
   parseMonth,
   monthPath,
   buildEntryLine,
@@ -20,7 +23,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.50";
+const APP_VERSION = "V0.51";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -355,7 +358,7 @@ function entryRow(e, { actions = false } = {}) {
         <span class="cat"><i style="background:${seriesVar(e.category)}"></i>${esc(CATEGORY_LABEL[e.category] || e.category)}</span>
         ${e.hours ? `<span>${formatDuration(e.hours)}</span>` : ""}
         ${status ? `<span>${status}</span>` : ""}
-        ${metrics.map(([k, v]) => `<span class="metric">${esc(k)} ${v}</span>`).join("")}
+        ${metrics.map(([k, v]) => `<span class="metric">${k === "crew" ? `👥 ${v} 人` : `${esc(k)} ${v}`}</span>`).join("")}
         ${tags.map((t) => `<span class="tag">#${esc(t)}</span>`).join("")}
       </div>
       ${
@@ -602,6 +605,9 @@ async function viewLog(date) {
         <label>專案（不含維修）<input type="text" name="project" list="project-names" placeholder="例如 迎廣50T"></label>
         <datalist id="project-names">${[...new Set(all.entries.map((e) => e.project).filter(Boolean))].map((p) => `<option value="${esc(p)}">`).join("")}</datalist>
         <div class="chips" id="phase-chips">${PHASES.map(([v, l]) => `<button type="button" class="chip" data-phase="${v}">${l}</button>`).join("")}</div>
+        <div id="crew-row" hidden><span class="muted crew-label">人數（算人工時）</span>
+          <div class="chips">${[1, 2, 3].map((n) => `<button type="button" class="chip" data-crew="${n}">${n} 人</button>`).join("")}</div>
+        </div>
       </div>
       <label id="due-row" hidden>到期日<input type="date" name="due" value="${addDays(date, 1)}"></label>
       <label>標籤（客戶、專案；用空格分開）<input type="text" name="tags" placeholder="例如：客戶名 panel"></label>
@@ -622,10 +628,22 @@ async function viewLog(date) {
   let category = "work";
   let editing = null;
   let phase = null;
+  let crew = 1;
+  const setCrew = (n) => {
+    crew = n;
+    document.querySelectorAll("#crew-row .chip").forEach((b) => b.classList.toggle("on", Number(b.dataset.crew) === n));
+  };
   const setPhase = (p) => {
     phase = p;
     document.querySelectorAll("#phase-chips .chip").forEach((b) => b.classList.toggle("on", b.dataset.phase === p));
+    document.getElementById("crew-row").hidden = !CREW_PHASES.includes(p);
+    if (!CREW_PHASES.includes(p)) setCrew(1);
+    else setCrew(crew);
   };
+  document.getElementById("crew-row").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-crew]");
+    if (b) setCrew(Number(b.dataset.crew));
+  });
   document.getElementById("phase-chips").addEventListener("click", (ev) => {
     const b = ev.target.closest("[data-phase]");
     if (b) setPhase(phase === b.dataset.phase ? null : b.dataset.phase);
@@ -760,6 +778,7 @@ async function viewLog(date) {
     if (form.mname.value.trim() && form.mval.value !== "") {
       metrics.push([form.mname.value.trim().toLowerCase().replace(/\s+/g, "_"), parseFloat(form.mval.value)]);
     }
+    if (["work", "meeting"].includes(category) && CREW_PHASES.includes(phase) && crew > 1) metrics.push(["crew", crew]);
     const line = buildEntryLine({
       time: start,
       category,
@@ -800,7 +819,8 @@ async function viewLog(date) {
       form.tags.value = e.tags.filter((t) => !["done", "dropped", "moved"].includes(t) && !(e.project && PHASES.some(([k]) => k === t))).join(" ");
       form.project.value = e.project || "";
       setPhase(e.project ? (PHASES.find(([k]) => e.tags.includes(k)) || [null])[0] : null);
-      const [m] = Object.entries(e.metrics);
+      const [m] = Object.entries(e.metrics).filter(([k]) => k !== "crew");
+      crew = crewOf(e);
       form.mname.value = m ? m[0] : "";
       form.mval.value = m ? m[1] : "";
       if (e.due) form.due.value = e.due;
@@ -1248,7 +1268,9 @@ async function viewProjects() {
             const rows = PHASES.filter(([k]) => p.phases[k]);
             return `<section class="card project">
       <div class="card-head"><h2>${esc(p.name)}</h2><strong class="project-total">${fmtH(p.hours)}</strong></div>
-      <p class="muted project-span">${p.first === p.last ? md(p.first) : `${md(p.first)} – ${md(p.last)}`}・${p.entries.length} 筆</p>
+      <p class="muted project-span">${p.first === p.last ? md(p.first) : `${md(p.first)} – ${md(p.last)}`}・${p.entries.length} 筆${
+        p.personHours - p.hours > 0.01 ? `・👥 人工時 ${fmtH(p.personHours)}` : ""
+      }</p>
       <div class="phase-bars">${rows
         .map(([k, l]) => {
           const list = p.entries.filter((e) => e.phase === k);
@@ -1262,18 +1284,29 @@ async function viewProjects() {
               return acc;
             }, {})
           ).sort((x, y) => y.h - x.h);
-          return `<details class="phase-detail"><summary class="phase-row"><span class="phase-name">${l}</span>
+          return `<details class="phase-detail" data-key="${esc(p.name)}|${k}"><summary class="phase-row"><span class="phase-name">${l}</span>
           <span class="phase-bar"><i style="width:${Math.max(3, (p.phases[k] / p.hours) * 100)}%"></i></span>
           <span class="phase-h">${fmtH(p.phases[k])}<small>${Math.round((p.phases[k] / p.hours) * 100)}%</small></span></summary>
+          ${CREW_PHASES.includes(k) ? `<p class="crew-total">👥 人工時 ${fmtH(p.personPhases[k])}</p>` : ""}
           <div class="phase-body">
             <p class="phase-sub">細項</p>
             <ul class="phase-items">${items
               .map(
-                (it) => `<li><details class="item-detail"><summary><span>${esc(it.text)}${it.n > 1 ? `<small>×${it.n}</small>` : ""}</span><span>${fmtH(it.h)}</span></summary>
+                (it) => `<li><details class="item-detail" data-key="${esc(p.name)}|${k}|${esc(it.text)}"><summary><span>${esc(it.text)}${it.n > 1 ? `<small>×${it.n}</small>` : ""}</span><span>${fmtH(it.h)}</span></summary>
               <div class="phase-entries-wrap">
                 <p class="phase-sub">明細（${it.entries.length} 筆）</p>
                 <ul class="phase-entries">${it.entries
-                  .map((e) => `<li><a href="#/log/${e.date}">${md(e.date)}</a> ${formatDuration(e.hours)}<br><span class="muted">${e.time}${endTime(e.time, e.hours) ? `–${endTime(e.time, e.hours)}` : ""}</span></li>`)
+                  .map(
+                    (e) => `<li><a href="#/log/${e.date}">${md(e.date)}</a> ${formatDuration(e.hours)}${
+                      CREW_PHASES.includes(k) && crewOf(e) > 1 ? `<small class="crew-calc"> × ${crewOf(e)} 人 = ${formatDuration(e.hours * crewOf(e))}</small>` : ""
+                    }<br><span class="muted">${e.time}${endTime(e.time, e.hours) ? `–${endTime(e.time, e.hours)}` : ""}</span>${
+                      CREW_PHASES.includes(k)
+                        ? `<div class="crew-pick" data-line="${esc(e.line)}" data-date="${e.date}">${[1, 2, 3]
+                            .map((n) => `<button type="button" class="chip small-chip ${crewOf(e) === n ? "on" : ""}" data-crew="${n}">${n} 人</button>`)
+                            .join("")}</div>`
+                        : ""
+                    }</li>`
+                  )
                   .join("")}</ul>
               </div></details></li>`
               )
@@ -1307,6 +1340,26 @@ async function viewProjects() {
     projectRange = b.dataset.prange;
     viewProjects();
   });
+  // Crew size on site entries: rewrite the entry's [crew=N].
+  // Attached to this render's cards only, so handlers never pile up on the shared view.
+  const onCrew = async (ev) => {
+    const b = ev.target.closest(".crew-pick [data-crew]");
+    if (!b || b.classList.contains("on")) return;
+    const box = b.closest(".crew-pick");
+    const old = box.dataset.line;
+    const open = [...view.querySelectorAll("details[open]")].map((d) => d.dataset.key).filter(Boolean);
+    box.querySelectorAll("button").forEach((x) => (x.disabled = true));
+    try {
+      await writeLog(box.dataset.date, { a: "replace", old, line: withCrew(old, Number(b.dataset.crew)) });
+      toast(`已設為 ${b.dataset.crew} 人`);
+      await viewProjects();
+      for (const key of open) view.querySelector(`details[data-key="${CSS.escape(key)}"]`)?.setAttribute("open", "");
+    } catch (e) {
+      toast(errorText(e), true);
+      box.querySelectorAll("button").forEach((x) => (x.disabled = false));
+    }
+  };
+  view.querySelectorAll(".project").forEach((card) => card.addEventListener("click", onCrew));
 }
 
 async function viewStats() {

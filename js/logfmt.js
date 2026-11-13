@@ -36,6 +36,21 @@ export const PHASES = [
   ["other", "其他"],
 ];
 
+// Site phases can be done by several people: [crew=N] on the entry, and
+// person-hours = hours × crew.
+export const CREW_PHASES = ["site-work", "test"];
+
+export function crewOf(e) {
+  const n = Math.round((e.metrics && e.metrics.crew) || 1);
+  return n > 0 ? n : 1;
+}
+
+// The same line with the crew size set (1 removes it).
+export function withCrew(line, n) {
+  const base = line.replace(/ \[crew=\d+(?:\.\d+)?\]/, "");
+  return n > 1 ? `${base} [crew=${n}]` : base;
+}
+
 export function normalizeProject(name) {
   return String(name || "").trim().replace(/^@/, "").replace(/\s+/g, "");
 }

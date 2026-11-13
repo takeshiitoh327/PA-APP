@@ -180,10 +180,13 @@ export function projectSummary(entries, start, end, phases) {
       }
       continue;
     }
-    const p = projects.get(e.project) || { name: e.project, hours: 0, phases: {}, first: e.date, last: e.date, entries: [] };
+    const p = projects.get(e.project) || { name: e.project, hours: 0, personHours: 0, phases: {}, personPhases: {}, first: e.date, last: e.date, entries: [] };
     const phase = keys.find((k) => e.tags.includes(k)) || "other";
+    const crew = Math.max(1, Math.round((e.metrics && e.metrics.crew) || 1));
     p.hours += e.hours;
+    p.personHours += e.hours * crew;
     p.phases[phase] = (p.phases[phase] || 0) + e.hours;
+    p.personPhases[phase] = (p.personPhases[phase] || 0) + e.hours * crew;
     if (e.date < p.first) p.first = e.date;
     if (e.date > p.last) p.last = e.date;
     p.entries.push({ ...e, phase });
