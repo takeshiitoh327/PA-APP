@@ -378,3 +378,4 @@ label.check input { width: auto; margin: 0; transform: scale(1.3); }
 .phase-items, .phase-entries { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; font-size: .88rem; }
 .phase-items li { display: flex; justify-content: space-between; gap: 8px; }
 .phase-items small { margin-left: 6px; color: var(--text-2); }
+.phase-entries-wrap { margin-left: 1em; padding-left: 10px; border-left: 2px solid var(--border); }

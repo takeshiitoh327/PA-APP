@@ -20,7 +20,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.46";
+const APP_VERSION = "V0.47";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -1269,10 +1269,12 @@ async function viewProjects() {
             <ul class="phase-items">${items
               .map((it) => `<li><span>${esc(it.text)}${it.n > 1 ? `<small>×${it.n}</small>` : ""}</span><span>${fmtH(it.h)}</span></li>`)
               .join("")}</ul>
+            <div class="phase-entries-wrap">
             <p class="phase-sub">明細（${list.length} 筆）</p>
             <ul class="phase-entries">${list
               .map((e) => `<li><a href="#/log/${e.date}">${md(e.date)}</a> ${e.time}${endTime(e.time, e.hours) ? `–${endTime(e.time, e.hours)}` : ""}・${formatDuration(e.hours)}<br><span class="muted">${esc(e.plain)}</span></li>`)
               .join("")}</ul>
+            </div>
           </div></details>`;
         })
         .join("")}</div>
