@@ -20,7 +20,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.45";
+const APP_VERSION = "V0.46";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -1250,12 +1250,33 @@ async function viewProjects() {
       <div class="card-head"><h2>${esc(p.name)}</h2><strong class="project-total">${fmtH(p.hours)}</strong></div>
       <p class="muted project-span">${p.first === p.last ? md(p.first) : `${md(p.first)} – ${md(p.last)}`}・${p.entries.length} 筆</p>
       <div class="phase-bars">${rows
-        .map(
-          ([k, l]) => `<div class="phase-row"><span class="phase-name">${l}</span>
+        .map(([k, l]) => {
+          const list = p.entries.filter((e) => e.phase === k);
+          // 細項: entries with the same text added up, largest first.
+          const items = Object.values(
+            list.reduce((acc, e) => {
+              const key = e.plain.replace(/\s+/g, "");
+              (acc[key] = acc[key] || { text: e.plain, h: 0, n: 0 }).h += e.hours;
+              acc[key].n++;
+              return acc;
+            }, {})
+          ).sort((x, y) => y.h - x.h);
+          return `<details class="phase-detail"><summary class="phase-row"><span class="phase-name">${l}</span>
           <span class="phase-bar"><i style="width:${Math.max(3, (p.phases[k] / p.hours) * 100)}%"></i></span>
-          <span class="phase-h">${fmtH(p.phases[k])}<small>${Math.round((p.phases[k] / p.hours) * 100)}%</small></span></div>`
-        )
+          <span class="phase-h">${fmtH(p.phases[k])}<small>${Math.round((p.phases[k] / p.hours) * 100)}%</small></span></summary>
+          <div class="phase-body">
+            <p class="phase-sub">細項</p>
+            <ul class="phase-items">${items
+              .map((it) => `<li><span>${esc(it.text)}${it.n > 1 ? `<small>×${it.n}</small>` : ""}</span><span>${fmtH(it.h)}</span></li>`)
+              .join("")}</ul>
+            <p class="phase-sub">明細（${list.length} 筆）</p>
+            <ul class="phase-entries">${list
+              .map((e) => `<li><a href="#/log/${e.date}">${md(e.date)}</a> ${e.time}${endTime(e.time, e.hours) ? `–${endTime(e.time, e.hours)}` : ""}・${formatDuration(e.hours)}<br><span class="muted">${esc(e.plain)}</span></li>`)
+              .join("")}</ul>
+          </div></details>`;
+        })
         .join("")}</div>
+      <p class="muted hint">點工作項目可以看細項和明細</p>
       <details class="project-entries"><summary>明細</summary><ul>${p.entries
         .map((e) => `<li><a href="#/log/${e.date}">${md(e.date)}</a> ${e.time}・${esc(phaseLabel[e.phase])}・${formatDuration(e.hours)}<br><span class="muted">${esc(e.plain)}</span></li>`)
         .join("")}</ul></details>
