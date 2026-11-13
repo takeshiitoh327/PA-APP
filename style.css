@@ -376,6 +376,11 @@ label.check input { width: auto; margin: 0; transform: scale(1.3); }
 .phase-body { margin: 6px 0 4px 1em; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--surface-2); border-radius: 0 8px 8px 0; }
 .phase-sub { margin: 4px 0; font-size: .8rem; font-weight: 600; color: var(--text-2); }
 .phase-items, .phase-entries { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; font-size: .88rem; }
-.phase-items li { display: flex; justify-content: space-between; gap: 8px; }
+.phase-items li { display: block; }
+.item-detail > summary { display: flex; justify-content: space-between; gap: 8px; cursor: pointer; list-style: none; }
+.item-detail > summary::-webkit-details-marker { display: none; }
+.item-detail > summary > span:first-child::before { content: "▸ "; color: var(--text-2); }
+.item-detail[open] > summary > span:first-child::before { content: "▾ "; }
+.item-detail .phase-entries-wrap { margin: 6px 0 4px 1em; }
 .phase-items small { margin-left: 6px; color: var(--text-2); }
 .phase-entries-wrap { margin-left: 1em; padding-left: 10px; border-left: 2px solid var(--border); }
