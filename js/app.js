@@ -5,6 +5,8 @@ import {
   EXERCISES,
   PHASES,
   CREW_PHASES,
+  PHASE_GROUPS,
+  PHASE_GROUP,
   crewOf,
   withCrew,
   parseMonth,
@@ -23,7 +25,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.51";
+const APP_VERSION = "V0.52";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -1260,19 +1262,15 @@ async function viewProjects() {
   const md = (d) => d.slice(5).replace("-", "/");
   view.innerHTML = `${statsSwitch("projects")}
   <div class="segmented">${ranges.map(([k, l]) => `<button class="${projectRange === k ? "on" : ""}" data-prange="${k}">${l}</button>`).join("")}</div>
-  <p class="range-label muted">專案共 ${fmtH(s.total)}・${s.list.length} 個專案（維修不算在內）</p>
+  <p class="range-label muted">專案共 ${fmtH(s.total)}（${PHASE_GROUPS.map(([g, gl]) => `${gl} ${fmtH(
+    s.list.reduce((a, p) => a + Object.entries(p.phases).filter(([k]) => PHASE_GROUP[k] === g).reduce((b, [, h]) => b + h, 0), 0)
+  )}`).join("・")}）・${s.list.length} 個專案（維修不算在內）</p>
   ${
     s.list.length
       ? s.list
           .map((p) => {
             const rows = PHASES.filter(([k]) => p.phases[k]);
-            return `<section class="card project">
-      <div class="card-head"><h2>${esc(p.name)}</h2><strong class="project-total">${fmtH(p.hours)}</strong></div>
-      <p class="muted project-span">${p.first === p.last ? md(p.first) : `${md(p.first)} – ${md(p.last)}`}・${p.entries.length} 筆${
-        p.personHours - p.hours > 0.01 ? `・👥 人工時 ${fmtH(p.personHours)}` : ""
-      }</p>
-      <div class="phase-bars">${rows
-        .map(([k, l]) => {
+            const phaseRow = (k, l) => {
           const list = p.entries.filter((e) => e.phase === k);
           // 細項: entries with the same text added up, largest first.
           const items = Object.values(
@@ -1312,8 +1310,23 @@ async function viewProjects() {
               )
               .join("")}</ul>
           </div></details>`;
-        })
-        .join("")}</div>
+            };
+            return `<section class="card project">
+      <div class="card-head"><h2>${esc(p.name)}</h2><strong class="project-total">${fmtH(p.hours)}</strong></div>
+      <p class="muted project-span">${p.first === p.last ? md(p.first) : `${md(p.first)} – ${md(p.last)}`}・${p.entries.length} 筆${
+        p.personHours - p.hours > 0.01 ? `・👥 人工時 ${fmtH(p.personHours)}` : ""
+      }</p>
+      <p class="group-split">${PHASE_GROUPS.map(([g, gl]) => `${gl} <strong>${fmtH(rows.filter(([k]) => PHASE_GROUP[k] === g).reduce((a, [k]) => a + p.phases[k], 0))}</strong>`).join("・")}</p>
+      ${PHASE_GROUPS.map(([g, gl]) => {
+        const gRows = rows.filter(([k]) => PHASE_GROUP[k] === g);
+        if (!gRows.length) return "";
+        const gh = gRows.reduce((a, [k]) => a + p.phases[k], 0);
+        const gp = gRows.reduce((a, [k]) => a + (p.personPhases[k] || 0), 0);
+        return `<div class="phase-group"><div class="phase-group-head"><span>${gl}</span><strong>${fmtH(gh)}${
+          gp - gh > 0.01 ? `<small>・👥 人工時 ${fmtH(gp)}</small>` : ""
+        }</strong></div>
+      <div class="phase-bars">${gRows.map(([k, l]) => phaseRow(k, l)).join("")}</div></div>`;
+      }).join("")}
       <p class="muted hint">點工作項目看細項，再點細項看明細</p>
       <details class="project-entries"><summary>明細</summary><ul>${p.entries
         .map((e) => `<li><a href="#/log/${e.date}">${md(e.date)}</a> ${e.time}・${esc(phaseLabel[e.phase])}・${formatDuration(e.hours)}<br><span class="muted">${esc(e.plain)}</span></li>`)

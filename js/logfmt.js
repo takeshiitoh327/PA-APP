@@ -36,6 +36,24 @@ export const PHASES = [
   ["other", "其他"],
 ];
 
+// Project hours are split into work done in the user's own shop (公司工時)
+// and work at the customer's site (現場工時).
+export const PHASE_GROUPS = [
+  ["shop", "公司工時"],
+  ["site", "現場工時"],
+];
+export const PHASE_GROUP = {
+  layout: "shop",
+  wiring: "shop",
+  "front-wiring": "shop",
+  program: "shop",
+  "shop-test": "shop",
+  bom: "shop",
+  other: "shop",
+  "site-work": "site",
+  test: "site",
+};
+
 // Site phases can be done by several people: [crew=N] on the entry, and
 // person-hours = hours × crew.
 export const CREW_PHASES = ["site-work", "test"];
