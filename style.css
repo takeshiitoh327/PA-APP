@@ -418,7 +418,7 @@ label.check input { width: auto; margin: 0; transform: scale(1.3); }
 .datenav .date-btn { gap: 6px; }
 .datenav .date-btn strong { white-space: nowrap; font-size: min(1.4em, 7.2vw); }
 .datenav-label { min-width: 0; }
-.datenav .date-btn .caret { font-size: min(.6em, 3.6vw); color: var(--text-2); line-height: 1; margin-left: 6px; vertical-align: 2px; }
+.datenav .date-btn .caret { font-size: min(.85em, 5vw); color: var(--text); line-height: 1; margin-left: 6px; vertical-align: 2px; }
 .date-lines { display: flex; flex-direction: column; align-items: center; line-height: 1.25; }
 .date-ym { font-size: min(.95em, 4.8vw); color: var(--text-2); white-space: nowrap; }
 .datenav .datenav-label { flex-direction: column; gap: 2px; }
