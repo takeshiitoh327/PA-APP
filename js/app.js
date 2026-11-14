@@ -25,7 +25,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.53";
+const APP_VERSION = "V0.54";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -341,7 +341,7 @@ function dateNav(date, base) {
   const today = todayTaipei();
   return `<div class="datenav">
     <a class="icon-btn" href="#/${base}/${addDays(date, -1)}" aria-label="前一天">‹</a>
-    <div class="datenav-label"><strong>${zhDate(date)}</strong>${date === today ? '<span class="pill">今天</span>' : `<a class="pill link" href="#/${base}/${today}">回到今天</a>`}</div>
+    <div class="datenav-label"><button type="button" class="date-btn" data-cal-open="${date}" data-cal-base="${base}" aria-label="選擇日期"><strong>${zhDate(date)}</strong><span class="caret">▾</span></button>${date === today ? '<span class="pill">今天</span>' : `<a class="pill link" href="#/${base}/${today}">回到今天</a>`}</div>
     <a class="icon-btn" href="#/${base}/${addDays(date, 1)}" aria-label="後一天">›</a>
   </div>`;
 }
@@ -1755,6 +1755,74 @@ document.getElementById("refresh").addEventListener("click", () => {
 document.addEventListener("pointerdown", (ev) => {
   if (!ev.target.closest("[data-tip]")) document.getElementById("tip").hidden = true;
 });
+// ---------- month picker (opened from the date in dateNav) ----------
+
+const WEEK_LABELS = ["日", "一", "二", "三", "四", "五", "六"];
+
+function monthAdd(ym, n) {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + n, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+async function renderPicker(box, ym, selected, base) {
+  const [y, m] = ym.split("-").map(Number);
+  const first = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
+  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const today = todayTaipei();
+  let logged = new Set();
+  try {
+    const month = await getMonth(ym);
+    logged = new Set([...month.days].filter(([, d]) => d.entries.length).map(([k]) => k));
+  } catch {}
+  if (!box.isConnected) return;
+  const cells = [];
+  for (let i = 0; i < first; i++) cells.push(`<span></span>`);
+  for (let d = 1; d <= days; d++) {
+    const iso = `${ym}-${String(d).padStart(2, "0")}`;
+    const cls = [iso === today && "today", iso === selected && "sel", logged.has(iso) && "has"].filter(Boolean).join(" ");
+    cells.push(`<a href="#/${base}/${iso}" class="${cls}">${d}</a>`);
+  }
+  box.innerHTML = `<div class="cal-head">
+      <button type="button" class="icon-btn" data-cal-move="-1" aria-label="上個月">‹</button>
+      <strong>${y} 年 ${m} 月</strong>
+      <button type="button" class="icon-btn" data-cal-move="1" aria-label="下個月">›</button>
+    </div>
+    <div class="cal-grid">${WEEK_LABELS.map((w) => `<b>${w}</b>`).join("")}${cells.join("")}</div>
+    <div class="cal-foot"><a href="#/${base}/${today}" class="btn small">今天</a></div>`;
+  box.dataset.ym = ym;
+}
+
+function closePicker() {
+  document.getElementById("cal-pop")?.remove();
+}
+
+document.addEventListener("click", (ev) => {
+  const open = ev.target.closest("[data-cal-open]");
+  if (open) {
+    if (document.getElementById("cal-pop")) return closePicker();
+    const pop = document.createElement("div");
+    pop.id = "cal-pop";
+    pop.innerHTML = `<div class="cal-backdrop"></div><div class="cal-box" role="dialog" aria-label="選擇日期"></div>`;
+    document.body.appendChild(pop);
+    const box = pop.querySelector(".cal-box");
+    box.dataset.sel = open.dataset.calOpen;
+    box.dataset.base = open.dataset.calBase;
+    renderPicker(box, open.dataset.calOpen.slice(0, 7), open.dataset.calOpen, open.dataset.calBase);
+    return;
+  }
+  const pop = document.getElementById("cal-pop");
+  if (!pop) return;
+  const move = ev.target.closest("[data-cal-move]");
+  if (move) {
+    const box = pop.querySelector(".cal-box");
+    renderPicker(box, monthAdd(box.dataset.ym, Number(move.dataset.calMove)), box.dataset.sel, box.dataset.base);
+    return;
+  }
+  if (ev.target.closest(".cal-backdrop") || ev.target.closest(".cal-grid a, .cal-foot a")) closePicker();
+});
+window.addEventListener("hashchange", closePicker);
+
 // The 今天 tab icon shows today's date (Asia/Taipei) and turns over at midnight.
 function updateCalendarIcon() {
   const [, m, d] = todayTaipei().split("-").map(Number);
