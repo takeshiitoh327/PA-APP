@@ -416,6 +416,9 @@ label.check input { width: auto; margin: 0; transform: scale(1.3); }
 .cal-head strong { font-size: 1.1rem; }
 .datenav > .icon-btn { width: 52px; height: 52px; flex: none; font-size: 2rem; line-height: 1; border-radius: 12px; background: var(--surface-2); }
 .datenav .date-btn { gap: 6px; }
-.datenav .date-btn strong { white-space: nowrap; font-size: min(.92em, 4.4vw); }
+.datenav .date-btn strong { white-space: nowrap; font-size: 1.15em; }
 .datenav-label { min-width: 0; }
-.datenav .date-btn .caret { font-size: 1.25rem; color: var(--text); }
+.datenav .date-btn .caret { font-size: 1.6rem; color: var(--text); line-height: 1; }
+.date-lines { display: flex; flex-direction: column; align-items: center; line-height: 1.25; }
+.date-ym { font-size: .85em; color: var(--text-2); white-space: nowrap; }
+.datenav .datenav-label { flex-direction: column; gap: 2px; }

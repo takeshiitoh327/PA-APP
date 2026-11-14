@@ -25,7 +25,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.56";
+const APP_VERSION = "V0.57";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -341,7 +341,7 @@ function dateNav(date, base) {
   const today = todayTaipei();
   return `<div class="datenav">
     <a class="icon-btn" href="#/${base}/${addDays(date, -1)}" aria-label="前一天">‹</a>
-    <div class="datenav-label"><button type="button" class="date-btn" data-cal-open="${date}" data-cal-base="${base}" aria-label="選擇日期"><strong>${zhDate(date)}</strong><span class="caret">▾</span></button>${date === today ? '<span class="pill">今天</span>' : `<a class="pill link" href="#/${base}/${today}">回到今天</a>`}</div>
+    <div class="datenav-label"><button type="button" class="date-btn" data-cal-open="${date}" data-cal-base="${base}" aria-label="選擇日期"><span class="date-lines"><span class="date-ym">${date.slice(0, 4)} 年 ${Number(date.slice(5, 7))} 月</span><strong>${Number(date.slice(8))} 日 星期${ZH_WEEKDAY[new Date(`${date}T00:00:00Z`).getUTCDay()]}</strong></span><span class="caret">▼</span></button>${date === today ? '<span class="pill">今天</span>' : `<a class="pill link" href="#/${base}/${today}">回到今天</a>`}</div>
     <a class="icon-btn" href="#/${base}/${addDays(date, 1)}" aria-label="後一天">›</a>
   </div>`;
 }
