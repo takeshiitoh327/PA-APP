@@ -25,7 +25,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.52";
+const APP_VERSION = "V0.53";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -1755,6 +1755,16 @@ document.getElementById("refresh").addEventListener("click", () => {
 document.addEventListener("pointerdown", (ev) => {
   if (!ev.target.closest("[data-tip]")) document.getElementById("tip").hidden = true;
 });
+// The 今天 tab icon shows today's date (Asia/Taipei) and turns over at midnight.
+function updateCalendarIcon() {
+  const [, m, d] = todayTaipei().split("-").map(Number);
+  document.getElementById("cal-month").textContent = `${m}月`;
+  document.getElementById("cal-day").textContent = String(d);
+}
+updateCalendarIcon();
+setInterval(updateCalendarIcon, 60000);
+document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && updateCalendarIcon());
+
 window.addEventListener("hashchange", route);
 document.getElementById("outbox-btn").addEventListener("click", () => (location.hash = "#/outbox"));
 // Coming back to the app (e.g. from a notification): drop what was read
