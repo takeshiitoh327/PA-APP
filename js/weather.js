@@ -137,14 +137,31 @@ function requestPosition() {
   });
 }
 
+// One retry after a short wait: a phone that just woke up or switched
+// between Wi-Fi and mobile data often fails the first request.
+async function fetchRetry(url) {
+  for (let i = 0; ; i++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10000);
+    try {
+      return await fetch(url, { signal: ctrl.signal });
+    } catch {
+      if (i >= 1) throw new Error("連不上天氣服務 api.open-meteo.com（網路不通，或 VPN／廣告阻擋擋住了它）");
+      await new Promise((r) => setTimeout(r, 2000));
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+
 async function forecast({ lat, lon }) {
   const url =
     `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
     "&current=temperature_2m,weather_code" +
     "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
     "&timezone=Asia%2FTaipei&forecast_days=1";
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("天氣服務暫時無法使用");
+  const res = await fetchRetry(url);
+  if (!res.ok) throw new Error(`天氣服務暫時無法使用（${res.status}）`);
   const d = await res.json();
   return {
     now: Math.round(d.current.temperature_2m),
