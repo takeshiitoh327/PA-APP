@@ -327,3 +327,31 @@ export function weatherLine(w, time, evening = false) {
   const rain = w.rain === null || w.rain === undefined ? "" : `・降雨 ${w.rain}%`;
   return `> ${evening ? "晚上天氣" : "天氣"}：${w.place}${w.fallback ? `（${w.fallback}）` : ""}・${describe(w.code).text}・${w.min}–${w.max}°C${rain}${evening ? `・當時 ${w.now}°C` : ""}（${time} 記錄）`;
 }
+
+// Which hosts the phone can reach at all. "no-cors" ignores the reply's
+// headers, so a failure here means the connection itself was blocked.
+const PROBES = [
+  ["GitHub", "https://api.github.com/"],
+  ["Open-Meteo", "https://api.open-meteo.com/v1/forecast?latitude=25&longitude=121&current=temperature_2m"],
+  ["MET Norway", "https://api.met.no/weatherapi/locationforecast/2.0/status"],
+  ["OpenStreetMap", "https://nominatim.openstreetmap.org/status"],
+  ["Google", "https://www.google.com/generate_204"],
+];
+
+export async function probeHosts() {
+  return Promise.all(
+    PROBES.map(async ([name, url]) => {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      const t0 = performance.now();
+      try {
+        await fetch(url, { mode: "no-cors", cache: "no-store", signal: ctrl.signal });
+        return { name, ok: true, ms: Math.round(performance.now() - t0) };
+      } catch (e) {
+        return { name, ok: false, why: e.name === "AbortError" ? "逾時" : "被擋" };
+      } finally {
+        clearTimeout(timer);
+      }
+    })
+  );
+}

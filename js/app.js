@@ -22,10 +22,10 @@ import {
 import * as outbox from "./outbox.js";
 import { MUSCLES, FRONT, BACK } from "./muscles.js";
 import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./repairs.js";
-import { todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
+import { probeHosts, todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.63";
+const APP_VERSION = "V0.64";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -517,7 +517,11 @@ async function loadWeather(date, day, tapped = false, force = false) {
       const state = await locationPermission();
       card.innerHTML = `<p class="muted">天氣：${esc(e.message || "無法取得")}${
         /權限/.test(e.message) ? "。可以到設定 → 天氣地點選一個城市，定位不能用時改顯示那裡的天氣。" : ""
-      }</p><p class="muted diag">${APP_VERSION}・${esc(diagnose())}・權限狀態 ${esc(state)}</p><div class="form-actions"><button type="button" class="btn small" id="weather-retry">重試</button></div>`;
+      }</p><p class="muted diag">${APP_VERSION}・${esc(diagnose())}・權限狀態 ${esc(state)}</p><p class="muted diag" id="net-probe">檢查網路連線中…</p><div class="form-actions"><button type="button" class="btn small" id="weather-retry">重試</button></div>`;
+      probeHosts().then((rs) => {
+        const el = document.getElementById("net-probe");
+        if (el) el.innerHTML = rs.map((r) => `${r.ok ? "✅" : "❌"} ${esc(r.name)}${r.ok ? ` ${r.ms}ms` : `（${r.why}）`}`).join("<br>");
+      });
       document.getElementById("weather-retry").addEventListener("click", () => {
         requestPositionNow();
         card.innerHTML = `<p class="muted">取得天氣中…</p>`;
