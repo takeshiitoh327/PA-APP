@@ -154,15 +154,26 @@ async function fetchRetry(url, host) {
   }
 }
 
-// Open-Meteo first; MET Norway (yr.no) when Open-Meteo cannot be reached.
-async function forecast(pos) {
+// 中央氣象署 first (when a key is set and the place is in Taiwan), then
+// Open-Meteo, then MET Norway. A failed 氣象署 request is kept in cwaError so
+// the card can say why it was skipped.
+async function forecast(pos, place = {}) {
+  let cwaError = "";
+  if (cwaKey() && CWA_IDS[place.county]) {
+    try {
+      return { ...(await cwa(place)), source: "中央氣象署" };
+    } catch (e) {
+      cwaError = e.message;
+    }
+  }
+  const extra = cwaError ? { cwaError } : {};
   try {
-    return await openMeteo(pos);
+    return { ...(await openMeteo(pos)), ...extra };
   } catch (e1) {
     try {
-      return { ...(await metNorway(pos)), source: "MET Norway" };
+      return { ...(await metNorway(pos)), source: "MET Norway", ...extra };
     } catch (e2) {
-      throw new Error(`兩個天氣來源都連不上（${e1.message}；${e2.message}）。網路不通，或 VPN／廣告阻擋擋住了它們`);
+      throw new Error(`天氣來源都連不上（${[cwaError && `氣象署：${cwaError}`, e1.message, e2.message].filter(Boolean).join("；")}）`);
     }
   }
 }
@@ -244,18 +255,139 @@ async function metNorway({ lat, lon }) {
   return fromMet(await res.json());
 }
 
-async function placeName({ lat, lon }) {
+// ---- 中央氣象署 (CWA) township forecast, F-D0047 "未來3天" (3-hourly) ----
+
+const CWA_KEY = "pa-app.cwa-key";
+
+export function cwaKey() {
+  try {
+    return localStorage.getItem(CWA_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+export function saveCwaKey(key) {
+  try {
+    if (key) localStorage.setItem(CWA_KEY, key);
+    else localStorage.removeItem(CWA_KEY);
+    localStorage.removeItem(DAY_KEY);
+  } catch {}
+}
+
+// Per-county datasets for the next 3 days, by township.
+export const CWA_IDS = {
+  宜蘭縣: "001", 桃園市: "005", 新竹縣: "009", 苗栗縣: "013", 彰化縣: "017", 南投縣: "021",
+  雲林縣: "025", 嘉義縣: "029", 屏東縣: "033", 臺東縣: "037", 花蓮縣: "041", 澎湖縣: "045",
+  基隆市: "049", 新竹市: "053", 嘉義市: "057", 臺北市: "061", 高雄市: "065", 新北市: "069",
+  臺中市: "073", 臺南市: "077", 連江縣: "081", 金門縣: "085",
+};
+
+// CWA wording as a WMO code, for the icon and the rain/cloud ordering.
+export function cwaCode(text) {
+  const t = String(text || "");
+  if (/雷/.test(t)) return 95;
+  if (/雪/.test(t)) return 71;
+  if (/大雨|豪雨/.test(t)) return 65;
+  if (/陣雨/.test(t)) return 80;
+  if (/雨/.test(t)) return 61;
+  if (/霧/.test(t)) return 45;
+  if (/^陰|陰$/.test(t)) return 3;
+  if (/^晴$/.test(t)) return 0;
+  if (/晴/.test(t)) return 1;
+  if (/雲/.test(t)) return 2;
+  return null;
+}
+
+// Reads a key in either the current (PascalCase) or the older (camelCase) spelling.
+const get = (o, ...keys) => {
+  for (const k of keys) if (o && o[k] !== undefined) return o[k];
+  return undefined;
+};
+const first = (v) => (Array.isArray(v) ? v[0] : v);
+
+function cwaElement(loc, ...names) {
+  const els = get(loc, "WeatherElement", "weatherElement") || [];
+  return els.find((e) => names.includes(get(e, "ElementName", "elementName")));
+}
+
+function cwaSlots(el, ...valueKeys) {
+  return (get(el, "Time", "time") || []).map((t) => {
+    const v = first(get(t, "ElementValue", "elementValue")) || {};
+    return { at: String(get(t, "DataTime", "dataTime", "StartTime", "startTime") || ""), value: get(v, ...valueKeys, "value") };
+  });
+}
+
+// Turns an F-D0047 reply into the same shape as openMeteo(), plus the
+// 氣象署's own wording for now and for the day.
+export function fromCwa(json, place, now = new Date()) {
+  if (json && json.success === "false") throw new Error("授權碼不正確");
+  const records = get(json, "records") || {};
+  const group = first(get(records, "Locations", "locations")) || {};
+  const list = get(group, "Location", "location") || [];
+  const name = (l) => norm(get(l, "LocationName", "locationName"));
+  const loc = list.find((l) => name(l) === place.town) || list.find((l) => name(l) === place.county) || (list.length === 1 ? list[0] : null);
+  if (!loc) throw new Error(`找不到 ${place.town || place.county} 的預報`);
+
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei" }).format(now);
+  const nowMs = now.getTime();
+  const isToday = (s) => s.at.slice(0, 10) === today;
+  const current = (slots) => {
+    const past = slots.filter((s) => s.at && Date.parse(s.at) <= nowMs);
+    return past.length ? past[past.length - 1] : slots[0];
+  };
+  const num = (v) => (v === undefined || v === null || v === "" || isNaN(Number(v)) ? null : Number(v));
+
+  const temps = cwaSlots(cwaElement(loc, "溫度", "T"), "Temperature").filter((s) => num(s.value) !== null);
+  if (!temps.length) throw new Error("氣象署回傳的資料沒有溫度");
+  const todayTemps = temps.filter(isToday).map((s) => num(s.value));
+  const range = todayTemps.length ? todayTemps : [num(current(temps).value)];
+
+  const pops = cwaSlots(cwaElement(loc, "3小時降雨機率", "PoP6h", "PoP12h"), "ProbabilityOfPrecipitation").filter(isToday).map((s) => num(s.value)).filter((v) => v !== null);
+  const wx = cwaSlots(cwaElement(loc, "天氣現象", "Wx"), "Weather").filter((s) => s.value);
+  const nowWx = wx.length ? current(wx).value : "";
+  let dayWx = nowWx;
+  for (const s of wx.filter(isToday)) {
+    if (SEVERITY.indexOf(cwaCode(s.value)) > SEVERITY.indexOf(cwaCode(dayWx))) dayWx = s.value;
+  }
+  return {
+    now: Math.round(num(current(temps).value)),
+    nowCode: cwaCode(nowWx),
+    code: cwaCode(dayWx),
+    nowText: nowWx || null,
+    dayText: dayWx || null,
+    max: Math.round(Math.max(...range)),
+    min: Math.round(Math.min(...range)),
+    rain: pops.length ? Math.max(...pops) : null,
+  };
+}
+
+async function cwa(place) {
+  const id = place.town ? CWA_IDS[place.county] : "089";
+  const name = place.town || place.county;
+  const url = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-${id}?Authorization=${encodeURIComponent(cwaKey())}&LocationName=${encodeURIComponent(name)}&format=JSON`;
+  const res = await fetchRetry(url, "中央氣象署");
+  if (res.status === 401) throw new Error("授權碼不正確");
+  if (!res.ok) throw new Error(`中央氣象署回應 ${res.status}`);
+  return fromCwa(await res.json(), place);
+}
+
+const norm = (n) => String(n || "").replace(/^台/, "臺");
+
+// { label, county, town } for the phone's position, e.g. 臺中市 + 大肚區.
+async function placeInfo({ lat, lon }) {
   try {
     const res = await fetch(
       `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=12&accept-language=zh-TW`,
       { referrerPolicy: "origin" }
     );
     const a = (await res.json()).address || {};
-    const county = a.city || a.county || a.state || "";
-    const town = a.town || a.suburb || a.city_district || a.village || "";
-    return county + (town && town !== county ? town : "") || "目前位置";
+    const county = norm(a.city || a.county || a.state || "");
+    let town = norm(a.town || a.suburb || a.city_district || a.village || "");
+    if (town === county) town = "";
+    return { label: county + town || "目前位置", county, town };
   } catch {
-    return "目前位置";
+    return { label: "目前位置", county: "", town: "" };
   }
 }
 
@@ -288,10 +420,10 @@ export async function todayWeather({ useCity = false, force = false } = {}) {
   const entry = CITIES.find(([name]) => name === city);
   let data;
   if (entry && (useCity || fixed)) {
-    data = { ...(await forecast({ lat: entry[1], lon: entry[2] })), place: entry[0] };
+    const place = { label: entry[0], county: entry[0], town: "" };
+    data = { ...(await forecast({ lat: entry[1], lon: entry[2] }, place)), place: entry[0] };
   } else {
     let pos;
-    let place;
     try {
       pos = await position();
     } catch (e) {
@@ -299,7 +431,7 @@ export async function todayWeather({ useCity = false, force = false } = {}) {
       // location on some days), then to the city from the settings.
       const last = lastPlace();
       if (last) {
-        data = { ...(await forecast(last)), place: last.place, fallback: "上次位置" };
+        data = { ...(await forecast(last, last)), place: last.place, fallback: "上次位置" };
       } else if (entry) {
         return todayWeather({ useCity: true });
       } else {
@@ -307,11 +439,10 @@ export async function todayWeather({ useCity = false, force = false } = {}) {
       }
     }
     if (pos) {
-      const [w, name] = await Promise.all([forecast(pos), placeName(pos)]);
-      place = name;
-      data = { ...w, place };
+      const info = await placeInfo(pos);
+      data = { ...(await forecast(pos, info)), place: info.label };
       try {
-        localStorage.setItem(LAST_KEY, JSON.stringify({ ...pos, place }));
+        localStorage.setItem(LAST_KEY, JSON.stringify({ ...pos, place: info.label, county: info.county, town: info.town }));
       } catch {}
     }
   }
@@ -325,7 +456,7 @@ export async function todayWeather({ useCity = false, force = false } = {}) {
 // The line stored under the day's heading in logs/YYYY-MM.md.
 export function weatherLine(w, time, evening = false) {
   const rain = w.rain === null || w.rain === undefined ? "" : `・降雨 ${w.rain}%`;
-  return `> ${evening ? "晚上天氣" : "天氣"}：${w.place}${w.fallback ? `（${w.fallback}）` : ""}・${describe(w.code).text}・${w.min}–${w.max}°C${rain}${evening ? `・當時 ${w.now}°C` : ""}（${time} 記錄）`;
+  return `> ${evening ? "晚上天氣" : "天氣"}：${w.place}${w.fallback ? `（${w.fallback}）` : ""}・${w.dayText || describe(w.code).text}・${w.min}–${w.max}°C${rain}${evening ? `・當時 ${w.now}°C` : ""}（${time} 記錄）`;
 }
 
 // Which hosts the phone can reach at all. "no-cors" ignores the reply's
@@ -334,6 +465,7 @@ const PROBES = [
   ["GitHub", "https://api.github.com/"],
   ["Open-Meteo", "https://api.open-meteo.com/v1/forecast?latitude=25&longitude=121&current=temperature_2m"],
   ["MET Norway", "https://api.met.no/weatherapi/locationforecast/2.0/status"],
+  ["中央氣象署", "https://opendata.cwa.gov.tw/"],
   ["OpenStreetMap", "https://nominatim.openstreetmap.org/status"],
 ];
 

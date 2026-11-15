@@ -22,10 +22,10 @@ import {
 import * as outbox from "./outbox.js";
 import { MUSCLES, FRONT, BACK } from "./muscles.js";
 import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./repairs.js";
-import { probeHosts, todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
+import { probeHosts, todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting, cwaKey, saveCwaKey } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.66";
+const APP_VERSION = "V0.67";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -492,12 +492,12 @@ async function loadWeather(date, day, tapped = false, force = false) {
     const now = describe(w.nowCode);
     card.innerHTML = `<div class="weather-row">
       <div class="weather-icon" aria-hidden="true">${now.icon}</div>
-      <div class="weather-main"><strong>${w.now}°C</strong><span>${esc(w.place)}${w.fallback ? `（${esc(w.fallback)}）` : ""}・現在${esc(now.text)}</span></div>
-      <div class="weather-day"><span>${today.icon} ${esc(today.text)}</span><span>${w.min}–${w.max}°C</span>${
+      <div class="weather-main"><strong>${w.now}°C</strong><span>${esc(w.place)}${w.fallback ? `（${esc(w.fallback)}）` : ""}・現在${esc(w.nowText || now.text)}</span></div>
+      <div class="weather-day"><span>${today.icon} ${esc(w.dayText || today.text)}</span><span>${w.min}–${w.max}°C</span>${
         w.rain !== null && w.rain !== undefined ? `<span>降雨 ${w.rain}%</span>` : ""
       }</div>
     </div>${w.rain >= 50 ? `<p class="weather-tip">☂️ 今天降雨機率高，記得帶傘</p>` : ""}
-    <p class="muted weather-when">${readAt ? `${readAt} 讀取・早上和晚上 20:30 後各更新一次` : ""}・資料來源 ${w.source === "MET Norway" ? "MET Norway（備用）" : "Open-Meteo"}<button type="button" class="link-btn" id="weather-refresh">立即更新</button></p>`;
+    <p class="muted weather-when">${readAt ? `${readAt} 讀取・早上和晚上 20:30 後各更新一次` : ""}・資料來源 ${w.source === "中央氣象署" ? "中央氣象署" : w.source === "MET Norway" ? "MET Norway（備用）" : "Open-Meteo"}${w.cwaError ? `（氣象署失敗：${esc(w.cwaError)}）` : ""}<button type="button" class="link-btn" id="weather-refresh">立即更新</button></p>`;
     document.getElementById("weather-refresh").addEventListener("click", () => {
       requestPositionNow();
       card.innerHTML = `<p class="muted">取得天氣中…</p>`;
@@ -1647,6 +1647,14 @@ async function viewSettings(_, firstRun) {
       ).join("")}</select>
     </label>
     <label class="check"><input type="checkbox" id="place-fixed" ${placeSetting().fixed ? "checked" : ""}> 一律使用這個城市（不用手機定位）</label>
+    <label>中央氣象署授權碼${cwaKey() ? "（已設定）" : ""}
+      <input type="password" id="cwa-key" autocomplete="off" placeholder="${cwaKey() ? "已設定，留空不變" : "CWA-…"}">
+    </label>
+    <div class="form-actions">
+      ${cwaKey() ? `<button type="button" class="btn ghost danger" id="cwa-clear">清除</button>` : ""}
+      <button type="button" class="btn small" id="cwa-save">儲存授權碼</button>
+    </div>
+    <p class="muted">有授權碼時，天氣優先用氣象署的鄉鎮預報。授權碼只存在這支手機，只會傳給 opendata.cwa.gov.tw。</p>
   </section>
   ${settings.token ? `<section class="card" id="push-card">
     <h2>手機通知</h2>
@@ -1700,6 +1708,18 @@ async function viewSettings(_, firstRun) {
   };
   document.getElementById("place-city").addEventListener("change", savePlace);
   document.getElementById("place-fixed").addEventListener("change", savePlace);
+  document.getElementById("cwa-save").addEventListener("click", () => {
+    const key = document.getElementById("cwa-key").value.trim();
+    if (!key) return toast("請先貼上授權碼");
+    saveCwaKey(key);
+    toast("授權碼已儲存，回到今天會重新讀取天氣");
+    viewSettings();
+  });
+  document.getElementById("cwa-clear")?.addEventListener("click", () => {
+    saveCwaKey("");
+    toast("授權碼已清除");
+    viewSettings();
+  });
   document.getElementById("clear-btn")?.addEventListener("click", () => {
     if (!confirm("清除這支手機上的 token？")) return;
     clearSettings();
