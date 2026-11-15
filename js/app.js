@@ -25,7 +25,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { probeHosts, todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting, cwaKey, saveCwaKey } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.68";
+const APP_VERSION = "V0.69";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -1619,8 +1619,7 @@ function bindTips(root) {
 
 async function viewSettings(_, firstRun) {
   titleEl.textContent = "設定";
-  view.innerHTML = `
-  ${firstRun ? `<section class="card notice"><h2>第一次使用</h2><p>這個 app 直接讀寫你的私人 repo。請先貼上 GitHub token，資料只存在這支手機的瀏覽器裡。</p></section>` : ""}
+  const gh = `
   <section class="card">
     <h2>GitHub 連線</h2>
     <form id="settings-form" autocomplete="off">
@@ -1639,8 +1638,20 @@ async function viewSettings(_, firstRun) {
       <p id="test-result" class="muted"></p>
     </form>
   </section>
+`;
+  view.innerHTML = `
+  <section class="card version-card"><span class="muted">app 版本</span><strong>${APP_VERSION}</strong></section>
+  ${firstRun ? `<section class="card notice"><h2>第一次使用</h2><p>這個 app 直接讀寫你的私人 repo。請先貼上 GitHub token，資料只存在這支手機的瀏覽器裡。</p></section>` : ""}
+  ${firstRun ? gh : ""}
   <section class="card" id="place-card">
-    <h2>天氣地點</h2>
+    <h2>天氣</h2>
+    <h3 class="sub">資料來源（依優先順序）</h3>
+    <ol class="source-list">
+      <li><b>中央氣象署</b>・鄉鎮預報・<span class="${cwaKey() ? "ok" : "muted"}">${cwaKey() ? "已設定授權碼" : "未設定授權碼，略過"}</span></li>
+      <li><b>Open-Meteo</b>・氣象署沒設定或失敗時使用</li>
+      <li><b>MET Norway</b>・前兩個都連不上時的備用</li>
+    </ol>
+    <h3 class="sub">地點</h3>
     <label>城市（手機定位不能用時使用）
       <select id="place-city"><option value="">不設定</option>${CITIES.map(
         ([name]) => `<option value="${name}" ${placeSetting().city === name ? "selected" : ""}>${name}</option>`
@@ -1661,7 +1672,7 @@ async function viewSettings(_, firstRun) {
     <p class="muted" id="push-status">檢查中…</p>
     <div class="form-actions" id="push-actions"></div>
   </section>` : ""}
-  <p class="muted diag">app 版本 ${APP_VERSION}</p>
+  ${firstRun ? "" : gh}
   <section class="card md">
     <h2>如何建立 token</h2>
     <ol>
