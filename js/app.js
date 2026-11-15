@@ -20,12 +20,13 @@ import {
   formatDuration,
 } from "./logfmt.js";
 import * as outbox from "./outbox.js";
+import { ESTIMATE_PATH, ESTIMATE_FIELDS, parseEstimates, estimateTotal } from "./estimates.js";
 import { MUSCLES, FRONT, BACK } from "./muscles.js";
 import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./repairs.js";
 import { probeHosts, todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting, cwaKey, saveCwaKey } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.70";
+const APP_VERSION = "V0.71";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -199,6 +200,7 @@ async function allLogs() {
 
 function forget(op) {
   if (op.kind === "repair") cache.repairs = null;
+  else if (op.kind === "estimate") cache.files.delete(ESTIMATE_PATH);
   else {
     cache.months.delete(op.date.slice(0, 7));
     cache.monthList = null;
@@ -1358,7 +1360,10 @@ let projectRange = "all";
 async function viewProjects() {
   titleEl.textContent = "專案工時";
   loading();
-  const { entries } = await allLogs();
+  const [{ entries }, estText] = await Promise.all([allLogs(), getText(ESTIMATE_PATH).catch(() => null)]);
+  const estimates = parseEstimates(outbox.overlay(ESTIMATE_PATH, estText));
+  // Estimates are compared with every hour ever logged, whatever the range.
+  const lifetime = new Map(projectSummary(entries, "0000-01-01", "9999-12-31", PHASES).list.map((p) => [p.name, p]));
   const today = todayTaipei();
   const [start, end] = projectRange === "all" ? ["0000-01-01", "9999-12-31"] : resolveRange(projectRange, today);
   const s = projectSummary(entries, start, end, PHASES);
@@ -1418,6 +1423,7 @@ async function viewProjects() {
             };
             return `<section class="card project">
       <div class="card-head"><h2>${esc(p.name)}</h2><strong class="project-total">${fmtH(p.hours)}</strong></div>
+      ${estimateBlock(p.name, estimates.get(p.name), lifetime.get(p.name))}
       <p class="muted project-span">${p.first === p.last ? md(p.first) : `${md(p.first)} – ${md(p.last)}`}・${p.entries.length} 筆${
         p.personHours - p.hours > 0.01 ? `・👥 人工時 ${fmtH(p.personHours)}` : ""
       }</p>
@@ -1478,6 +1484,67 @@ async function viewProjects() {
     }
   };
   view.querySelectorAll(".project").forEach((card) => card.addEventListener("click", onCrew));
+
+  // Estimate form: open, save.
+  view.querySelectorAll(".estimate").forEach((box) => {
+    box.querySelector("[data-est-edit]").addEventListener("click", () => {
+      const f = box.querySelector("form");
+      f.hidden = !f.hidden;
+      if (!f.hidden) f.querySelector("input").focus();
+    });
+    box.querySelector("form").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const f = ev.target;
+      const est = Object.fromEntries(ESTIMATE_FIELDS.map(([k]) => [k, parseFloat(f[k].value) || 0]));
+      const btn = f.querySelector("button[type=submit]");
+      btn.disabled = true;
+      try {
+        await save({ kind: "estimate", project: box.dataset.project, est });
+        toast(estimateTotal(est) ? "預估工時已儲存" : "預估工時已清除");
+        await viewProjects();
+      } catch (e) {
+        toast(errorText(e), true);
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+// Estimated hours at the top of a project card, next to what was logged.
+function estimateBlock(name, est, actual) {
+  est = est || {};
+  const total = estimateTotal(est);
+  const phases = (actual && actual.personPhases) || {};
+  const actualOf = (keys) => (keys ? keys.reduce((a, k) => a + (phases[k] || 0), 0) : null);
+  const compared = ESTIMATE_FIELDS.filter(([, , keys]) => keys);
+  const estCompared = compared.reduce((a, [k]) => a + (est[k] || 0), 0);
+  const actCompared = compared.reduce((a, [, , keys]) => a + actualOf(keys), 0);
+  const diff = (e, a) => {
+    if (!e) return "";
+    const d = a - e;
+    return `<small class="${d > 0.01 ? "over" : "under"}">${d > 0.01 ? `超出 ${fmtH(d)}` : `剩 ${fmtH(-d)}`}</small>`;
+  };
+  const rows = ESTIMATE_FIELDS.map(([k, l, keys]) => {
+    const a = actualOf(keys);
+    return `<tr><th>${l}</th><td>${est[k] ? fmtH(est[k]) : "—"}</td><td>${a === null ? "" : fmtH(a)}</td><td>${a === null ? "" : diff(est[k], a)}</td></tr>`;
+  }).join("");
+  return `<div class="estimate" data-project="${esc(name)}">
+    <div class="est-head"><span>📐 預估工時${total ? ` <strong>${fmtH(total)}</strong>` : ""}</span><button type="button" class="link-btn" data-est-edit>${total ? "修改" : "＋ 填預估"}</button></div>
+    ${
+      total
+        ? `<table class="est-table"><thead><tr><th></th><th>預估</th><th>實際</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+    <p class="muted est-note">實際＝日誌全部紀錄（現場用人工時）；硬體＝製作電盤＋配盤配線＋面板配線，軟體＝程式編寫＋公司測試${
+      estCompared ? `・可對照的部分預估 ${fmtH(estCompared)}，實際 ${fmtH(actCompared)}` : ""
+    }</p>`
+        : ""
+    }
+    <form class="est-form" hidden autocomplete="off">
+      <div class="est-inputs">${ESTIMATE_FIELDS.map(
+        ([k, l]) => `<label>${l}（h）<input type="number" name="${k}" min="0" step="0.5" inputmode="decimal" value="${est[k] || ""}"></label>`
+      ).join("")}</div>
+      <div class="form-actions"><button type="submit" class="btn small primary">儲存預估</button></div>
+    </form>
+  </div>`;
 }
 
 async function viewStats() {
