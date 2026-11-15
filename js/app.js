@@ -26,7 +26,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { probeHosts, todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting, cwaKey, saveCwaKey } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.73";
+const APP_VERSION = "V0.74";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -1009,7 +1009,7 @@ const FRONT_KEYS = new Set(FRONT.map(([k]) => k).filter(Boolean));
 // ---------- health ----------
 
 const BRUSH_TAG = "toothbrush";
-const BRUSH_DAYS = 90; // dentists' usual advice: a new head every 3 months
+const BRUSH_DAYS = 30;
 
 function brushChanges(entries) {
   return entries.filter((e) => e.tags.includes(BRUSH_TAG)).sort((a, b) => (a.date + a.time < b.date + b.time ? 1 : -1));
