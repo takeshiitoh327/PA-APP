@@ -67,7 +67,7 @@ export function transformOf(op) {
 
 export function messageOf(op) {
   if (op.kind === "repair") return `Repair: ${op.date} ${op.rec.customer}`;
-  if (op.kind === "estimate") return `Estimate: ${op.project}`;
+  if (op.kind === "estimate") return `Project hours: ${op.project}`;
   return op.a === "weather" ? `Weather: ${op.date}` : `Log: ${op.date}`;
 }
 
@@ -122,7 +122,7 @@ export function loadCopy(path) {
 
 export function describe(op) {
   if (op.kind === "repair") return `🔧 ${op.date} ${op.rec.customer}・${op.rec.machine}`;
-  if (op.kind === "estimate") return `📐 ${op.project} 預估工時`;
+  if (op.kind === "estimate") return `📐 ${op.project} 實際工時`;
   if (op.a === "mood") return `😊 ${op.date} 心情 ${op.mood ?? "清除"}`;
   if (op.a === "weather") return `🌤️ ${op.date} 天氣`;
   if (op.a === "replace" && op.line === null) return `🗑️ ${op.date} 刪除 ${op.old.replace(/^- /, "")}`;

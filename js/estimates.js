@@ -1,7 +1,7 @@
-// Estimated hours per project, kept in projects/estimates.md as one line per
+// Actual hours per project, entered by hand, kept in projects/hours.md as one line per
 // project:  - 迎廣50T · hw=40 · sw=16 · site=24 · travel=6 · extra=8
 
-export const ESTIMATE_PATH = "projects/estimates.md";
+export const ESTIMATE_PATH = "projects/hours.md";
 
 // [key, label, phases whose logged hours count as the actual]
 export const ESTIMATE_FIELDS = [
@@ -12,9 +12,9 @@ export const ESTIMATE_FIELDS = [
   ["extra", "外縣市額外", null],
 ];
 
-const HEADER = `# Project estimates
+const HEADER = `# Project hours
 
-Estimated hours per project, entered in the app (專案工時). hw = hardware, sw = software, site = on-site work, travel = travel estimate, extra = extra hours for sites outside the home county.
+Actual hours per project, entered by hand in the app (專案工時). hw = hardware, sw = software, site = on-site work, travel = travel, extra = extra hours for sites outside the home county.
 
 `;
 
