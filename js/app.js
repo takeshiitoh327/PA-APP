@@ -26,7 +26,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { probeHosts, todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting, cwaKey, saveCwaKey } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.72";
+const APP_VERSION = "V0.73";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -315,6 +315,7 @@ async function viewOutbox() {
 
 const routes = {
   doms: viewDoms,
+  health: viewHealth,
   outbox: viewOutbox,
   projects: viewProjects,
   repairs: viewRepairs,
@@ -451,6 +452,7 @@ async function viewToday(date, focus) {
         : `<p class="muted">${isToday ? "今天還沒有紀錄。" : "這天沒有紀錄。"}</p>`
     }
   </section>
+  ${isToday ? brushReminder(all.entries, date) : ""}
   ${
     plans.length
       ? `<section class="card"><h2>追問</h2><ul class="plain">${plans
@@ -1003,6 +1005,94 @@ function domsSide() {
   }
 }
 const FRONT_KEYS = new Set(FRONT.map(([k]) => k).filter(Boolean));
+
+// ---------- health ----------
+
+const BRUSH_TAG = "toothbrush";
+const BRUSH_DAYS = 90; // dentists' usual advice: a new head every 3 months
+
+function brushChanges(entries) {
+  return entries.filter((e) => e.tags.includes(BRUSH_TAG)).sort((a, b) => (a.date + a.time < b.date + b.time ? 1 : -1));
+}
+
+function brushReminder(entries, today) {
+  const [last] = brushChanges(entries);
+  if (!last) return "";
+  const used = daysBetween(last.date, today);
+  if (used < BRUSH_DAYS) return "";
+  return `<section class="card notice"><p>🪥 電動牙刷刷頭已經用了 ${used} 天，該換了。<a href="#/health">換好記一下</a></p></section>`;
+}
+
+async function viewHealth() {
+  titleEl.textContent = "健康";
+  loading();
+  const { entries } = await allLogs();
+  const today = todayTaipei();
+  const changes = brushChanges(entries);
+  const last = changes[0];
+  const used = last ? daysBetween(last.date, today) : null;
+  const left = last ? BRUSH_DAYS - used : null;
+  view.innerHTML = `
+  <section class="card" id="brush-card">
+    <h2>🪥 電動牙刷刷頭</h2>
+    ${
+      last
+        ? `<div class="brush-status ${left <= 0 ? "due" : left <= 14 ? "soon" : ""}">
+        <div><span class="muted">上次更換</span><strong>${last.date.slice(0, 4) === today.slice(0, 4) ? zhDate(last.date, false) : zhDate(last.date)}</strong></div>
+        <div><span class="muted">已使用</span><strong>${used} 天</strong></div>
+        <div><span class="muted">${left > 0 ? "建議再過" : "已超過建議"}</span><strong>${Math.abs(left)} 天</strong></div>
+      </div>
+      <p class="muted">建議每 ${BRUSH_DAYS} 天換一次・建議更換日 ${zhDate(addDays(last.date, BRUSH_DAYS))}</p>`
+        : `<p class="muted">還沒有紀錄。換刷頭那天記一下，之後會算出已經用幾天、什麼時候該換。</p>`
+    }
+    <form id="brush-form" class="row brush-form" autocomplete="off">
+      <label>更換日期<input type="date" name="date" value="${today}" max="${today}" required></label>
+      <div class="form-actions"><button type="submit" class="btn primary">記錄更換</button></div>
+    </form>
+    ${
+      changes.length
+        ? `<h3 class="sub">更換紀錄</h3><ul class="brush-history">${changes
+            .map((e, i) => {
+              const prev = changes[i + 1];
+              return `<li><span>${zhDate(e.date)}${e.waiting ? " ⏳" : ""}</span><span class="muted">${prev ? `用了 ${daysBetween(prev.date, e.date)} 天` : "第一筆"}</span><button type="button" class="link-btn danger" data-del="${i}">刪除</button></li>`;
+            })
+            .join("")}</ul>`
+        : ""
+    }
+  </section>`;
+
+  const form = document.getElementById("brush-form");
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const date = form.date.value;
+    if (!date || date > today) return toast("日期不能是未來", true);
+    if (changes.some((e) => e.date === date)) return toast("這天已經記過了", true);
+    const line = buildEntryLine({ time: date === today ? nowTaipei(1) : "12:00", category: "health", hours: null, text: "更換電動牙刷刷頭", tags: [BRUSH_TAG] });
+    const btn = form.querySelector("button");
+    btn.disabled = true;
+    try {
+      await writeLog(date, { a: "add", line });
+      toast("已記錄更換刷頭");
+      viewHealth();
+    } catch (e) {
+      toast(errorText(e), true);
+      btn.disabled = false;
+    }
+  });
+  view.querySelector(".brush-history")?.addEventListener("click", async (ev) => {
+    const b = ev.target.closest("[data-del]");
+    if (!b) return;
+    const e = changes[Number(b.dataset.del)];
+    if (!confirm(`刪除 ${zhDate(e.date)} 的更換紀錄？`)) return;
+    try {
+      await writeLog(e.date, { a: "replace", old: e.line, line: null });
+      toast("已刪除");
+      viewHealth();
+    } catch (err) {
+      toast(errorText(err), true);
+    }
+  });
+}
 
 async function viewDoms(date) {
   date = date || todayTaipei();

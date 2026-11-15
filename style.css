@@ -451,3 +451,14 @@ h3.sub { font-size: .9rem; margin: 14px 0 6px; color: var(--muted, #999); font-w
 .est-table .under { color: var(--muted); }
 .est-note { font-size: .75rem; margin: 6px 0 0; }
 .est-inputs { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin-top: 8px; }
+
+.brush-status { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 8px 0; }
+.brush-status > div { display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 10px; background: var(--surface-2, rgba(127,127,127,.08)); }
+.brush-status span { font-size: .75rem; }
+.brush-status strong { font-size: 1rem; }
+.brush-status.soon > div:last-child strong { color: #e0a030; }
+.brush-status.due > div:last-child strong { color: var(--danger); }
+.brush-form { align-items: end; margin-top: 8px; }
+.brush-history { list-style: none; margin: 0; padding: 0; }
+.brush-history li { display: flex; gap: 10px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--border); }
+.brush-history li span:first-child { flex: 1; }
