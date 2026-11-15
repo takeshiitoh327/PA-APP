@@ -139,14 +139,14 @@ function requestPosition() {
 
 // One retry after a short wait: a phone that just woke up or switched
 // between Wi-Fi and mobile data often fails the first request.
-async function fetchRetry(url) {
+async function fetchRetry(url, host) {
   for (let i = 0; ; i++) {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 10000);
     try {
       return await fetch(url, { signal: ctrl.signal });
     } catch {
-      if (i >= 1) throw new Error("連不上天氣服務 api.open-meteo.com（網路不通，或 VPN／廣告阻擋擋住了它）");
+      if (i >= 1) throw new Error(`連不上 ${host}`);
       await new Promise((r) => setTimeout(r, 2000));
     } finally {
       clearTimeout(timer);
@@ -154,14 +154,27 @@ async function fetchRetry(url) {
   }
 }
 
-async function forecast({ lat, lon }) {
+// Open-Meteo first; MET Norway (yr.no) when Open-Meteo cannot be reached.
+async function forecast(pos) {
+  try {
+    return await openMeteo(pos);
+  } catch (e1) {
+    try {
+      return { ...(await metNorway(pos)), source: "MET Norway" };
+    } catch (e2) {
+      throw new Error(`兩個天氣來源都連不上（${e1.message}；${e2.message}）。網路不通，或 VPN／廣告阻擋擋住了它們`);
+    }
+  }
+}
+
+async function openMeteo({ lat, lon }) {
   const url =
     `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
     "&current=temperature_2m,weather_code" +
     "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
     "&timezone=Asia%2FTaipei&forecast_days=1";
-  const res = await fetchRetry(url);
-  if (!res.ok) throw new Error(`天氣服務暫時無法使用（${res.status}）`);
+  const res = await fetchRetry(url, "Open-Meteo");
+  if (!res.ok) throw new Error(`Open-Meteo 回應 ${res.status}`);
   const d = await res.json();
   return {
     now: Math.round(d.current.temperature_2m),
@@ -171,6 +184,64 @@ async function forecast({ lat, lon }) {
     min: Math.round(d.daily.temperature_2m_min[0]),
     rain: d.daily.precipitation_probability_max[0],
   };
+}
+
+// MET Norway symbol codes (without _day/_night) as WMO codes, so the rest of
+// the app can treat both sources alike.
+const MET_SYMBOLS = {
+  clearsky: 0, fair: 1, partlycloudy: 2, cloudy: 3, fog: 45,
+  lightrain: 61, rain: 63, heavyrain: 65,
+  lightrainshowers: 80, rainshowers: 81, heavyrainshowers: 82,
+  lightsleet: 66, sleet: 66, heavysleet: 67, lightsleetshowers: 66, sleetshowers: 66, heavysleetshowers: 67,
+  lightsnow: 71, snow: 73, heavysnow: 75, lightsnowshowers: 85, snowshowers: 85, heavysnowshowers: 86,
+};
+
+export function metCode(symbol) {
+  const base = String(symbol || "").replace(/_(day|night|polartwilight)$/, "");
+  if (base.includes("thunder")) return 95;
+  return MET_SYMBOLS[base] ?? null;
+}
+
+// Rough severity, so the day shows its worst weather (rain over cloud).
+const SEVERITY = [0, 1, 2, 3, 45, 51, 61, 80, 63, 81, 65, 82, 66, 67, 71, 85, 73, 86, 75, 95];
+const worse = (a, b) => (a === null ? b : b === null ? a : SEVERITY.indexOf(b) > SEVERITY.indexOf(a) ? b : a);
+
+const taipeiDate = (iso) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei" }).format(new Date(iso));
+
+// Turns a MET Norway "complete" forecast into the same shape as openMeteo().
+// Only the rest of today is in the forecast, so min/max cover the hours left.
+export function fromMet(json, today = taipeiNow().date) {
+  const series = (json && json.properties && json.properties.timeseries) || [];
+  if (!series.length) throw new Error("MET Norway 沒有資料");
+  const first = series[0].data;
+  const todays = series.filter((t) => taipeiDate(t.time) === today);
+  const use = todays.length ? todays : [series[0]];
+  const temps = use.map((t) => t.data.instant.details.air_temperature).filter((v) => typeof v === "number");
+  let code = null;
+  let rain = null;
+  for (const t of use) {
+    const next = t.data.next_1_hours || t.data.next_6_hours;
+    if (!next) continue;
+    code = worse(code, metCode(next.summary && next.summary.symbol_code));
+    const p = next.details && next.details.probability_of_precipitation;
+    if (typeof p === "number") rain = Math.max(rain ?? 0, p);
+  }
+  const nowNext = first.next_1_hours || first.next_6_hours || {};
+  const nowCode = metCode(nowNext.summary && nowNext.summary.symbol_code);
+  return {
+    now: Math.round(first.instant.details.air_temperature),
+    nowCode: nowCode ?? code,
+    code: code ?? nowCode,
+    max: Math.round(Math.max(...temps)),
+    min: Math.round(Math.min(...temps)),
+    rain: rain === null ? null : Math.round(rain),
+  };
+}
+
+async function metNorway({ lat, lon }) {
+  const res = await fetchRetry(`https://api.met.no/weatherapi/locationforecast/2.0/complete?lat=${lat}&lon=${lon}`, "MET Norway");
+  if (!res.ok) throw new Error(`MET Norway 回應 ${res.status}`);
+  return fromMet(await res.json());
 }
 
 async function placeName({ lat, lon }) {

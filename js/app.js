@@ -25,7 +25,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.62";
+const APP_VERSION = "V0.63";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -497,7 +497,7 @@ async function loadWeather(date, day, tapped = false, force = false) {
         w.rain !== null && w.rain !== undefined ? `<span>降雨 ${w.rain}%</span>` : ""
       }</div>
     </div>${w.rain >= 50 ? `<p class="weather-tip">☂️ 今天降雨機率高，記得帶傘</p>` : ""}
-    <p class="muted weather-when">${readAt ? `${readAt} 讀取・早上和晚上 20:30 後各更新一次` : ""}<button type="button" class="link-btn" id="weather-refresh">立即更新</button></p>`;
+    <p class="muted weather-when">${readAt ? `${readAt} 讀取・早上和晚上 20:30 後各更新一次` : ""}${w.source ? `・資料來源 ${esc(w.source)}（備用）` : ""}<button type="button" class="link-btn" id="weather-refresh">立即更新</button></p>`;
     document.getElementById("weather-refresh").addEventListener("click", () => {
       requestPositionNow();
       card.innerHTML = `<p class="muted">取得天氣中…</p>`;
