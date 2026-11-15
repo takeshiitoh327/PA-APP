@@ -25,7 +25,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { probeHosts, todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting, cwaKey, saveCwaKey } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.69";
+const APP_VERSION = "V0.70";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -531,6 +531,63 @@ async function loadWeather(date, day, tapped = false, force = false) {
   }
 }
 
+let logQuery = "";
+
+const PHASE_NAME = Object.fromEntries(PHASES);
+
+// The last few distinct work entries (same project, phase and text count once).
+function recentWork(entries, n = 6) {
+  const seen = new Set();
+  const out = [];
+  const sorted = entries
+    .filter((e) => ["work", "meeting"].includes(e.category) && e.plain)
+    .sort((a, b) => (a.date + a.time < b.date + b.time ? 1 : -1));
+  for (const e of sorted) {
+    const phase = (PHASES.find(([k]) => e.tags.includes(k)) || [""])[0];
+    const key = `${e.project}|${phase}|${e.plain}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(e);
+    if (out.length >= n) break;
+  }
+  return out;
+}
+
+function recentLabel(e) {
+  const phase = PHASES.find(([k]) => e.tags.includes(k));
+  const head = [e.project, phase && e.project ? phase[1] : ""].filter(Boolean).join("・");
+  const text = e.plain.length > 14 ? `${e.plain.slice(0, 14)}…` : e.plain;
+  return head ? `${head}：${text}` : text;
+}
+
+// Every word must appear in the entry (text, project, category, phase, date).
+function searchResults(entries, query) {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return "";
+  const hay = (e) =>
+    [e.text, e.project || "", CATEGORY_LABEL[e.category] || e.category, ...e.tags.map((t) => PHASE_NAME[t] || ""), e.date]
+      .join(" ")
+      .toLowerCase();
+  const hits = entries.filter((e) => words.every((w) => hay(e).includes(w))).sort((a, b) => (a.date + a.time < b.date + b.time ? 1 : -1));
+  if (!hits.length) return `<p class="muted">找不到符合「${esc(query)}」的紀錄。</p>`;
+  const hours = hits.reduce((t, e) => t + (e.hours || 0), 0);
+  const days = new Set(hits.map((e) => e.date)).size;
+  const shown = hits.slice(0, 100);
+  const mark = (text) => {
+    let out = esc(text);
+    for (const w of words) out = out.replace(new RegExp(esc(w).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), (m) => `<mark>${m}</mark>`);
+    return out;
+  };
+  return `<p class="muted search-sum">${hits.length} 筆・${days} 天${hours ? `・共 ${formatDuration(hours)}` : ""}${hits.length > shown.length ? `（顯示最新 ${shown.length} 筆）` : ""}</p>
+    <ul class="search-hits">${shown
+      .map(
+        (e) => `<li><a href="#/log/${e.date}">${zhDate(e.date)}</a> ${e.time}${e.hours ? `・${formatDuration(e.hours)}` : ""}・${esc(CATEGORY_LABEL[e.category] || e.category)}${
+          e.project ? `・${mark(e.project)}` : ""
+        }<br><span>${mark(e.plain)}</span></li>`
+      )
+      .join("")}</ul>`;
+}
+
 async function viewLog(date) {
   date = date || todayTaipei();
   titleEl.textContent = "日誌";
@@ -544,7 +601,13 @@ async function viewLog(date) {
   const recentTags = Object.entries(tagCount).sort((a, b) => b[1] - a[1]).slice(0, 16).map(([t]) => t);
   const metricNames = [...new Set(all.entries.flatMap((e) => Object.keys(e.metrics)))].filter((k) => k !== "sleep_q");
 
+  const recent = recentWork(all.entries);
+
   view.innerHTML = `${dateNav(date, "log")}
+  <section class="card" id="search-card">
+    <label class="search">🔍 搜尋所有日誌（內容、專案、標籤、階段）<input type="search" id="log-q" value="${esc(logQuery)}" placeholder="例如 迎廣 現場測試、程式" autocomplete="off"></label>
+    <div id="log-results"></div>
+  </section>
   <section class="card">
     <div class="card-head"><h2>這天的紀錄</h2><span class="muted">${entries.length} 筆</span></div>
     ${entries.length ? `<ul class="entries">${entries.map((e) => entryRow(e, { actions: true })).join("")}</ul><p class="muted totals">${esc(dayTotals(entries))}</p>` : `<p class="muted">還沒有紀錄。</p>`}
@@ -592,6 +655,9 @@ async function viewLog(date) {
   </section>
   <section class="card" id="form-card">
     <h2 id="form-title">新增紀錄</h2>
+    ${recent.length ? `<div id="recent-row"><span class="muted crew-label">最近的工作（點一下帶入）</span><div class="chips small" id="recent-chips">${recent
+      .map((e, i) => `<button type="button" class="chip" data-recent="${i}">${esc(recentLabel(e))}</button>`)
+      .join("")}</div></div>` : ""}
     <form id="entry-form" autocomplete="off">
       <div class="row">
         <label>開始<input type="time" name="start" required value="${nowTaipei()}"></label>
@@ -688,6 +754,41 @@ async function viewLog(date) {
     document.getElementById("cancel-edit").hidden = true;
   };
   document.getElementById("cancel-edit").addEventListener("click", resetForm);
+
+  // Fill the form from a recent entry; start time is now, the rest is copied.
+  document.getElementById("recent-chips")?.addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-recent]");
+    if (!b) return;
+    const e = recent[Number(b.dataset.recent)];
+    resetForm();
+    setCategory(e.category);
+    form.text.value = e.plain;
+    form.project.value = e.project || "";
+    const tags = e.tags.filter((t) => !["done", "dropped", "moved"].includes(t) && !(e.project && PHASES.some(([k]) => k === t)));
+    form.tags.value = tags.join(" ");
+    document.querySelectorAll("#tag-chips .chip").forEach((c) => c.classList.toggle("on", tags.includes(c.dataset.tag)));
+    crew = crewOf(e);
+    setPhase(e.project ? (PHASES.find(([k]) => e.tags.includes(k)) || [null])[0] : null);
+    if (e.hours) {
+      form.dh.value = Math.floor(e.hours) || "";
+      form.dm.value = Math.round((e.hours % 1) * 60) || "";
+    }
+    document.querySelectorAll("#recent-chips .chip").forEach((c) => c.classList.toggle("on", c === b));
+    toast("已帶入，確認時間後按儲存");
+  });
+
+  // Search across every month already loaded for this page.
+  const searchBox = document.getElementById("log-q");
+  const showResults = () => {
+    logQuery = searchBox.value;
+    document.getElementById("log-results").innerHTML = searchResults(all.entries, logQuery);
+  };
+  let searchTimer;
+  searchBox.addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(showResults, 200);
+  });
+  if (logQuery) showResults();
 
   const busy = async (btn, fn) => {
     btn.disabled = true;
