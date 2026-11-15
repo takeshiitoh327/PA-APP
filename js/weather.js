@@ -335,7 +335,6 @@ const PROBES = [
   ["Open-Meteo", "https://api.open-meteo.com/v1/forecast?latitude=25&longitude=121&current=temperature_2m"],
   ["MET Norway", "https://api.met.no/weatherapi/locationforecast/2.0/status"],
   ["OpenStreetMap", "https://nominatim.openstreetmap.org/status"],
-  ["Google", "https://www.google.com/generate_204"],
 ];
 
 export async function probeHosts() {
