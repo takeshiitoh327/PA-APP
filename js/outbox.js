@@ -9,11 +9,11 @@
 //   { kind: "log", date, a: "mood", mood }
 //   { kind: "log", date, a: "weather", line }
 //   { kind: "repair", date, rec }
-//   { kind: "estimate", project, est }
+//   { kind: "estimate", project, a: "add" | "delete", line }
 
 import { addEntry, replaceEntry, setMood, setWeather } from "./logfmt.js";
 import { addRepair, repairPath } from "./repairs.js";
-import { ESTIMATE_PATH, setEstimate } from "./estimates.js";
+import { ESTIMATE_PATH, addInput, removeInput } from "./estimates.js";
 
 const KEY = "pa-app.outbox";
 const COPY_PREFIX = "pa-app.copy:";
@@ -56,7 +56,7 @@ export function pathOf(op) {
 // The change as a function from the file's text to the new text.
 export function transformOf(op) {
   if (op.kind === "repair") return (text) => addRepair(text, op.rec);
-  if (op.kind === "estimate") return (text) => setEstimate(text, op.project, op.est);
+  if (op.kind === "estimate") return (text) => (op.a === "delete" ? removeInput(text, op.line) : addInput(text, op.line));
   const d = op.date;
   if (op.a === "add") return (text) => addEntry(text, d, op.line);
   if (op.a === "replace") return (text) => replaceEntry(text, d, op.old, op.line);
@@ -122,7 +122,7 @@ export function loadCopy(path) {
 
 export function describe(op) {
   if (op.kind === "repair") return `🔧 ${op.date} ${op.rec.customer}・${op.rec.machine}`;
-  if (op.kind === "estimate") return `📐 ${op.project} 實際工時`;
+  if (op.kind === "estimate") return `🕒 ${op.project} 實際工時${op.a === "delete" ? " 刪除" : ""}`;
   if (op.a === "mood") return `😊 ${op.date} 心情 ${op.mood ?? "清除"}`;
   if (op.a === "weather") return `🌤️ ${op.date} 天氣`;
   if (op.a === "replace" && op.line === null) return `🗑️ ${op.date} 刪除 ${op.old.replace(/^- /, "")}`;

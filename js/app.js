@@ -20,13 +20,13 @@ import {
   formatDuration,
 } from "./logfmt.js";
 import * as outbox from "./outbox.js";
-import { ESTIMATE_PATH, ESTIMATE_FIELDS, parseEstimates, estimateTotal } from "./estimates.js";
+import { ESTIMATE_PATH, ESTIMATE_FIELDS, parseEstimates, estimateTotal, sumInputs, inputLine } from "./estimates.js";
 import { MUSCLES, FRONT, BACK } from "./muscles.js";
 import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./repairs.js";
 import { probeHosts, todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting, cwaKey, saveCwaKey } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.74";
+const APP_VERSION = "V0.75";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -1573,8 +1573,9 @@ async function viewProjects() {
   };
   view.querySelectorAll(".project").forEach((card) => card.addEventListener("click", onCrew));
 
-  // Hand-entered hours form: open, save.
+  // Hand-entered hours: open the form, add an input, delete one.
   view.querySelectorAll(".estimate").forEach((box) => {
+    const project = box.dataset.project;
     box.querySelector("[data-est-edit]").addEventListener("click", () => {
       const f = box.querySelector("form");
       f.hidden = !f.hidden;
@@ -1583,35 +1584,66 @@ async function viewProjects() {
     box.querySelector("form").addEventListener("submit", async (ev) => {
       ev.preventDefault();
       const f = ev.target;
-      const est = Object.fromEntries(ESTIMATE_FIELDS.map(([k]) => [k, parseFloat(f[k].value) || 0]));
+      const hours = Object.fromEntries(ESTIMATE_FIELDS.map(([k]) => [k, parseFloat(f[k].value) || 0]));
+      const line = inputLine(project, `${todayTaipei()} ${nowTaipei(1)}`, hours);
+      if (!line) return toast("請至少填一欄", true);
       const btn = f.querySelector("button[type=submit]");
       btn.disabled = true;
       try {
-        await save({ kind: "estimate", project: box.dataset.project, est });
-        toast(estimateTotal(est) ? "實際工時已儲存" : "實際工時已清除");
+        await save({ kind: "estimate", project, a: "add", line });
+        toast("實際工時已加入");
         await viewProjects();
       } catch (e) {
         toast(errorText(e), true);
         btn.disabled = false;
       }
     });
+    box.querySelector(".est-inputs-list")?.addEventListener("click", async (ev) => {
+      const b = ev.target.closest("[data-est-del]");
+      if (!b) return;
+      if (!confirm("刪除這筆實際工時？")) return;
+      b.disabled = true;
+      try {
+        await save({ kind: "estimate", project, a: "delete", line: b.dataset.estDel });
+        toast("已刪除");
+        await viewProjects();
+      } catch (e) {
+        toast(errorText(e), true);
+        b.disabled = false;
+      }
+    });
   });
 }
 
-// Hours entered by hand at the top of a project card.
-function estimateBlock(name, est) {
-  est = est || {};
-  const total = estimateTotal(est);
-  const rows = ESTIMATE_FIELDS.map(([k, l]) => `<tr><th>${l}</th><td>${est[k] ? fmtH(est[k]) : "—"}</td></tr>`).join("");
+// Hours entered by hand at the top of a project card: totals, then every
+// input in the order it was entered.
+function estimateBlock(name, list) {
+  list = list || [];
+  const sum = sumInputs(list);
+  const total = estimateTotal(sum);
+  const when = (at) => (at ? `${Number(at.slice(5, 7))}/${Number(at.slice(8, 10))} ${at.slice(11)}` : "之前輸入");
+  const parts = (h) =>
+    ESTIMATE_FIELDS.filter(([k]) => h[k])
+      .map(([k, l]) => `${l} ${formatDuration(h[k])}`)
+      .join("・");
   return `<div class="estimate" data-project="${esc(name)}">
-    <div class="est-head"><span>🕒 實際工時${total ? ` <strong>${fmtH(total)}</strong>` : ""}</span><button type="button" class="link-btn" data-est-edit>${total ? "修改" : "＋ 填實際工時"}</button></div>
-    ${total ? `<table class="est-table"><tbody>${rows}</tbody></table>` : ""}
+    <div class="est-head"><span>🕒 實際工時${total ? ` <strong>${formatDuration(total)}</strong>` : ""}</span><button type="button" class="link-btn" data-est-edit>＋ 輸入</button></div>
+    ${total ? `<table class="est-table"><tbody>${ESTIMATE_FIELDS.map(([k, l]) => `<tr><th>${l}</th><td>${sum[k] ? formatDuration(sum[k]) : "—"}</td></tr>`).join("")}</tbody></table>` : ""}
     <form class="est-form" hidden autocomplete="off">
       <div class="est-inputs">${ESTIMATE_FIELDS.map(
-        ([k, l]) => `<label>${l}（h）<input type="number" name="${k}" min="0" step="0.5" inputmode="decimal" value="${est[k] || ""}"></label>`
+        ([k, l]) => `<label>${l}（h）<input type="number" name="${k}" min="0" step="0.5" inputmode="decimal"></label>`
       ).join("")}</div>
-      <div class="form-actions"><button type="submit" class="btn small primary">儲存</button></div>
+      <div class="form-actions"><button type="submit" class="btn small primary">加入</button></div>
     </form>
+    ${
+      list.length
+        ? `<p class="phase-sub">輸入紀錄（${list.length} 筆）</p><ul class="est-inputs-list">${list
+            .map(
+              (r) => `<li><span class="est-when">${when(r.at)}</span><span class="est-parts">${parts(r.hours)}<small> ＝ ${formatDuration(estimateTotal(r.hours))}</small></span><button type="button" class="link-btn danger" data-est-del="${esc(r.line)}">刪除</button></li>`
+            )
+            .join("")}</ul>`
+        : ""
+    }
   </div>`;
 }
 
