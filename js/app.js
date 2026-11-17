@@ -26,7 +26,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { probeHosts, todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting, cwaKey, saveCwaKey } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.75";
+const APP_VERSION = "V0.76";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -1628,7 +1628,7 @@ function estimateBlock(name, list) {
       .join("・");
   return `<div class="estimate" data-project="${esc(name)}">
     <div class="est-head"><span>🕒 實際工時${total ? ` <strong>${formatDuration(total)}</strong>` : ""}</span><button type="button" class="link-btn" data-est-edit>＋ 輸入</button></div>
-    ${total ? `<table class="est-table"><tbody>${ESTIMATE_FIELDS.map(([k, l]) => `<tr><th>${l}</th><td>${sum[k] ? formatDuration(sum[k]) : "—"}</td></tr>`).join("")}</tbody></table>` : ""}
+    ${total ? `<table class="est-table"><tbody>${ESTIMATE_FIELDS.map(([k, l]) => `<tr><th>${l}</th><td>${sum[k] ? formatDuration(sum[k]) : "—"}</td></tr>`).join("")}<tr class="est-total"><th>總工時</th><td>${formatDuration(total)}</td></tr></tbody></table>` : ""}
     <form class="est-form" hidden autocomplete="off">
       <div class="est-inputs">${ESTIMATE_FIELDS.map(
         ([k, l]) => `<label>${l}（h）<input type="number" name="${k}" min="0" step="0.5" inputmode="decimal"></label>`
