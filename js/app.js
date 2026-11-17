@@ -26,7 +26,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { probeHosts, todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting, cwaKey, saveCwaKey } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.76";
+const APP_VERSION = "V0.77";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -473,6 +473,12 @@ async function viewToday(date, focus) {
 }
 
 // Shows today's weather and, the first time each day, writes it to the log.
+// "臺中市北屯區" -> ["臺中市", "北屯區"]: county on one line, town on the next.
+function placeLines(place) {
+  const m = /^(.{2,3}?[縣市])(.+)$/.exec(place || "");
+  return m ? [m[1], m[2]] : [place || ""];
+}
+
 async function loadWeather(date, day, tapped = false, force = false) {
   const card = document.getElementById("weather-card");
   const place = placeSetting();
@@ -496,7 +502,7 @@ async function loadWeather(date, day, tapped = false, force = false) {
     const now = describe(w.nowCode);
     card.innerHTML = `<div class="weather-row">
       <div class="weather-icon" aria-hidden="true">${now.icon}</div>
-      <div class="weather-main"><strong>${w.now}°C</strong><span>${esc(w.place)}${w.fallback ? `（${esc(w.fallback)}）` : ""}・現在${esc(w.nowText || now.text)}</span></div>
+      <div class="weather-main"><strong>${w.now}°C</strong>${placeLines(w.place).map((l) => `<span>${esc(l)}</span>`).join("")}${w.fallback ? `<span>（${esc(w.fallback)}）</span>` : ""}</div>
       <div class="weather-day"><span>${today.icon} ${esc(w.dayText || today.text)}</span><span>${w.min}–${w.max}°C</span>${
         w.rain !== null && w.rain !== undefined ? `<span>降雨 ${w.rain}%</span>` : ""
       }</div>
