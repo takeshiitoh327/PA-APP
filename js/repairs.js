@@ -66,6 +66,24 @@ export function buildRepair(r) {
   return lines.join("\n");
 }
 
+function headOf(k) {
+  return `## ${k.date} · ${oneLine(k.customer)} · ${oneLine(k.machine)}`;
+}
+
+// Removes the record with this date, customer and machine.
+export function removeRepair(text, old) {
+  const parts = (text || "").replace(/\n*$/, "").split(/\n(?=## )/);
+  const i = parts.findIndex((p, n) => n > 0 && p.split("\n")[0].trim() === headOf(old));
+  if (i < 0) throw new Error("找不到要修改的維修紀錄，可能已在別處改過");
+  parts.splice(i, 1);
+  return parts.map((p) => p.replace(/\n+$/, "")).join("\n\n").replace(/\n{3,}/g, "\n\n") + "\n";
+}
+
+// Swaps a record for its edited version (same month file).
+export function replaceRepair(text, old, r) {
+  return addRepair(removeRepair(text, old), r);
+}
+
 // Adds a record to the month file, keeping records in date order.
 export function addRepair(text, r) {
   const block = buildRepair(r);

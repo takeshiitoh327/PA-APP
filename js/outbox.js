@@ -9,10 +9,12 @@
 //   { kind: "log", date, a: "mood", mood }
 //   { kind: "log", date, a: "weather", line }
 //   { kind: "repair", date, rec }
+//   { kind: "repair", date, rec, old }   (edit; old = {date, customer, machine})
+//   { kind: "repair", date, rec: null, old }   (edit that moved it to another month)
 //   { kind: "estimate", project, a: "add" | "delete", line }
 
 import { addEntry, replaceEntry, setMood, setWeather } from "./logfmt.js";
-import { addRepair, repairPath } from "./repairs.js";
+import { addRepair, removeRepair, replaceRepair, repairPath } from "./repairs.js";
 import { ESTIMATE_PATH, addInput, removeInput } from "./estimates.js";
 
 const KEY = "pa-app.outbox";
@@ -55,7 +57,11 @@ export function pathOf(op) {
 
 // The change as a function from the file's text to the new text.
 export function transformOf(op) {
-  if (op.kind === "repair") return (text) => addRepair(text, op.rec);
+  if (op.kind === "repair") {
+    if (!op.old) return (text) => addRepair(text, op.rec);
+    if (!op.rec) return (text) => removeRepair(text, op.old);
+    return (text) => replaceRepair(text, op.old, op.rec);
+  }
   if (op.kind === "estimate") return (text) => (op.a === "delete" ? removeInput(text, op.line) : addInput(text, op.line));
   const d = op.date;
   if (op.a === "add") return (text) => addEntry(text, d, op.line);
@@ -66,7 +72,7 @@ export function transformOf(op) {
 }
 
 export function messageOf(op) {
-  if (op.kind === "repair") return `Repair: ${op.date} ${op.rec.customer}`;
+  if (op.kind === "repair") return `Repair: ${op.date} ${(op.rec || op.old).customer}${op.old ? " (edit)" : ""}`;
   if (op.kind === "estimate") return `Project hours: ${op.project}`;
   return op.a === "weather" ? `Weather: ${op.date}` : `Log: ${op.date}`;
 }
@@ -95,7 +101,7 @@ export function waitingLines() {
 
 export function waitingRepairs() {
   return list()
-    .filter((o) => o.kind === "repair")
+    .filter((o) => o.kind === "repair" && o.rec)
     .map((o) => `${o.date}|${o.rec.customer}|${o.rec.machine}`);
 }
 
@@ -121,7 +127,10 @@ export function loadCopy(path) {
 }
 
 export function describe(op) {
-  if (op.kind === "repair") return `🔧 ${op.date} ${op.rec.customer}・${op.rec.machine}`;
+  if (op.kind === "repair") {
+    const r = op.rec || op.old;
+    return `${op.old ? "✏️" : "🔧"} ${op.date} ${r.customer}・${r.machine}${op.old ? " 修改" : ""}`;
+  }
   if (op.kind === "estimate") return `🕒 ${op.project} 實際工時${op.a === "delete" ? " 刪除" : ""}`;
   if (op.a === "mood") return `😊 ${op.date} 心情 ${op.mood ?? "清除"}`;
   if (op.a === "weather") return `🌤️ ${op.date} 天氣`;

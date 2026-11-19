@@ -26,7 +26,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { probeHosts, todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting, cwaKey, saveCwaKey } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.77";
+const APP_VERSION = "V0.78";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -1264,45 +1264,59 @@ function checkRow(name, label, value = "", placeholder = "") {
   </li>`;
 }
 
-function repairFormHtml(date) {
-  return `<form id="repair-form" autocomplete="off">
-    <label>日期<input type="date" name="date" required value="${date}"></label>
+// The repair form. With rec it is the edit form for that record.
+function repairFormHtml(date, rec = null) {
+  const r = rec || {};
+  const rows = (name, ph) => {
+    const vals = String(r[name] || "").split("；").map((v) => v.trim()).filter(Boolean);
+    return (vals.length ? vals : [""]).map((v, i) => checkRow(name, "", v, i ? "" : ph)).join("");
+  };
+  const v = (k) => esc(r[k] || "");
+  return `<form class="repair-form" ${rec ? "" : 'id="repair-form"'} autocomplete="off">
+    <label>日期<input type="date" name="date" required value="${esc(date)}"></label>
     <h3 class="form-sub">對象</h3>
     <ul class="checklist">
-      ${checkRow("direct", "直接客戶", "", "例如 屏東傑生工業")}
-      ${checkRow("client", "客戶", "", "例如 田豐")}
-      ${checkRow("owner", "業主", "", "例如 奕郝")}
+      ${checkRow("direct", "直接客戶", r.direct || "", "例如 屏東傑生工業")}
+      ${checkRow("client", "客戶", r.client || (rec && !r.direct ? r.customer : "") || "", "例如 田豐")}
+      ${checkRow("owner", "業主", r.owner || "", "例如 奕郝")}
     </ul>
     <h3 class="form-sub">機台與維修</h3>
     <ul class="checklist">
-      ${checkRow("machine", "機台名稱", "", "例如 打包機")}
+      ${checkRow("machine", "機台名稱", r.machine || "", "例如 打包機")}
     </ul>
     <p class="check-group">故障原因</p>
-    <ul class="checklist" data-list="cause">${checkRow("cause", "", "", "例如 PLC 輸出點損壞")}</ul>
+    <ul class="checklist" data-list="cause">${rows("cause", "例如 PLC 輸出點損壞")}</ul>
     <button type="button" class="btn small" data-add="cause">＋ 再加一項原因</button>
     <p class="check-group">維修內容</p>
-    <ul class="checklist" data-list="fix">${checkRow("fix", "", "", "例如 更換 PLC FBs-24MAR2-AC")}</ul>
+    <ul class="checklist" data-list="fix">${rows("fix", "例如 更換 PLC FBs-24MAR2-AC")}</ul>
     <button type="button" class="btn small" data-add="fix">＋ 再加一項維修內容</button>
-    <details class="more">
-      <summary>更多欄位（地點、年份、零件、雲端資料夾、工時）</summary>
-      <label>地點<input type="text" name="place" list="dl-place" placeholder="例如 南投市南崗工業區"></label>
-      <label>年份<input type="text" name="year" placeholder="西元年，例如 2014、未知"></label>
-      <label>製造（機台／電控）<input type="text" name="build" placeholder="例如 機台 田豐；電控 中信"></label>
-      <label>故障現象<input type="text" name="symptom"></label>
-      <label>更換零件（用「；」分開）<input type="text" name="parts" placeholder="例如 FBs-24MAR2-AC；CU-11 380V"></label>
-      <label>雲端資料夾連結<input type="url" name="folder" inputmode="url" placeholder="https://drive.google.com/drive/folders/…"></label>
-      <p class="muted hint">工時（填了才會同時記一筆日誌）</p>
+    <details class="more" ${rec ? "open" : ""}>
+      <summary>更多欄位（地點、年份、零件、雲端資料夾${rec ? "" : "、工時"}）</summary>
+      <label>地點<input type="text" name="place" list="dl-place" value="${v("place")}" placeholder="例如 南投市南崗工業區"></label>
+      <label>年份<input type="text" name="year" value="${v("year")}" placeholder="西元年，例如 2014、未知"></label>
+      <label>製造（機台／電控）<input type="text" name="build" value="${v("build")}" placeholder="例如 機台 田豐；電控 中信"></label>
+      <label>故障現象<input type="text" name="symptom" value="${v("symptom")}"></label>
+      <label>更換零件（用「；」分開）<input type="text" name="parts" value="${v("parts")}" placeholder="例如 FBs-24MAR2-AC；CU-11 380V"></label>
+      <label>雲端資料夾連結<input type="url" name="folder" inputmode="url" value="${v("folder")}" placeholder="https://drive.google.com/drive/folders/…"></label>
+      ${
+        rec
+          ? ""
+          : `<p class="muted hint">工時（填了才會同時記一筆日誌）</p>
       <div class="row">
         <label>開始<input type="time" name="start"></label>
         <label>結束<input type="time" name="end"></label>
-      </div>
+      </div>`
+      }
     </details>
-    ${["direct", "client", "owner", "machine", "place"].map((k) => `<datalist id="dl-${k}"></datalist>`).join("")}
-    <div class="form-actions"><button type="submit" class="btn primary">儲存維修紀錄</button></div>
+    ${rec ? "" : ["direct", "client", "owner", "machine", "place"].map((k) => `<datalist id="dl-${k}"></datalist>`).join("")}
+    <div class="form-actions">
+      ${rec ? '<button type="button" class="btn" data-cancel>取消</button>' : ""}
+      <button type="submit" class="btn primary">${rec ? "儲存修改" : "儲存維修紀錄"}</button>
+    </div>
   </form>`;
 }
 
-function repairCard(x) {
+function repairCard(x, i) {
   const who = [
     x.direct && `直接客戶 ${x.direct}`,
     x.client && `客戶 ${x.client}`,
@@ -1310,14 +1324,17 @@ function repairCard(x) {
   ].filter(Boolean);
   const sub = [x.place && `📍 ${x.place}`, x.year, x.build].filter(Boolean);
   const list = (v) => `<ul class="bullets">${String(v).split("；").filter(Boolean).map((i) => `<li>${esc(i)}</li>`).join("")}</ul>`;
-  return `<section class="card repair">
+  return `<section class="card repair" data-i="${i}">
     <div class="card-head"><h2>${x.waiting ? `<span class="waiting" title="還沒上傳">⏳</span> ` : ""}${esc(x.customer)}・${esc(x.machine)}</h2><span class="muted">${esc(x.date)}</span></div>
     ${who.length ? `<p class="repair-who">${esc(who.join("・"))}</p>` : ""}
     ${sub.length ? `<p class="muted repair-sub">${esc(sub.join("・"))}</p>` : ""}
     <dl class="kv repair-kv">${REPAIR_FIELDS.filter(([k]) => ["symptom", "cause", "fix", "parts"].includes(k) && x[k])
       .map(([k, l]) => `<dt>${l}</dt><dd>${["cause", "fix"].includes(k) ? list(x[k]) : esc(x[k])}</dd>`)
       .join("")}</dl>
-    ${/^https:\/\//.test(x.folder || "") ? `<a class="btn small" href="${esc(x.folder)}" target="_blank" rel="noopener">📁 打開雲端資料夾</a>` : ""}
+    <div class="repair-actions">
+      ${/^https:\/\//.test(x.folder || "") ? `<a class="btn small" href="${esc(x.folder)}" target="_blank" rel="noopener">📁 打開雲端資料夾</a>` : ""}
+      ${x.waiting ? "" : `<button type="button" class="btn small" data-edit="${i}">✏️ 修改</button>`}
+    </div>
   </section>`;
 }
 
@@ -1325,14 +1342,15 @@ async function viewRepairs(openDate) {
   titleEl.textContent = "維修紀錄";
   loading();
   const list = await allRepairs();
+  let hits = [];
   const render = () => {
     const q = repairQuery.trim().toLowerCase();
-    const hits = (q ? list.filter((x) => REPAIR_FIELDS.map(([k]) => x[k]).concat(x.customer, x.machine, x.date).join(" ").toLowerCase().includes(q)) : list.slice()).sort((a, b) =>
+    hits = (q ? list.filter((x) => REPAIR_FIELDS.map(([k]) => x[k]).concat(x.customer, x.machine, x.date).join(" ").toLowerCase().includes(q)) : list.slice()).sort((a, b) =>
       repairOrder() === "old" ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date)
     );
     document.querySelectorAll("#repair-order button").forEach((btn) => btn.classList.toggle("on", btn.dataset.order === repairOrder()));
     document.getElementById("repair-list").innerHTML = hits.length
-      ? hits.map(repairCard).join("")
+      ? hits.map((x, i) => repairCard(x, i)).join("")
       : `<section class="card"><p class="muted">${q ? "找不到符合的維修紀錄。" : "還沒有維修紀錄，按上面的「＋ 新增維修紀錄」。"}</p></section>`;
   };
   view.innerHTML = `<section class="card">
@@ -1360,11 +1378,33 @@ async function viewRepairs(openDate) {
     render();
   });
 
-  const f = document.getElementById("repair-form");
   for (const k of ["direct", "client", "owner", "machine", "place"]) {
     const vals = [...new Set(list.map((x) => (k === "machine" ? x.machine : x[k])).filter(Boolean))];
     document.getElementById(`dl-${k}`).innerHTML = vals.map((v) => `<option value="${esc(v)}">`).join("");
   }
+  const after = () => {
+    repairQuery = "";
+    location.hash = "#/repairs";
+    if (!openDate) viewRepairs();
+  };
+  wireRepairForm(document.getElementById("repair-form"), null, after);
+
+  document.getElementById("repair-list").addEventListener("click", (ev) => {
+    const btn = ev.target.closest("[data-edit]");
+    if (!btn) return;
+    const x = hits[+btn.dataset.edit];
+    const card = btn.closest(".card");
+    card.classList.add("editing");
+    card.innerHTML = `<div class="card-head"><h2>✏️ 修改維修紀錄</h2><span class="muted">${esc(x.date)}</span></div>${repairFormHtml(x.date, x)}`;
+    const f = card.querySelector("form");
+    f.querySelector("[data-cancel]").addEventListener("click", render);
+    wireRepairForm(f, x, () => viewRepairs());
+    card.scrollIntoView({ block: "start", behavior: "smooth" });
+  });
+}
+
+// Checklist behaviour and saving for a new (old = null) or edited repair.
+function wireRepairForm(f, old, done) {
   f.addEventListener("input", (ev) => {
     const row = ev.target.closest(".check-row");
     if (row && ev.target.type === "text") row.querySelector(".check-box").checked = ev.target.value.trim() !== "";
@@ -1391,6 +1431,7 @@ async function viewRepairs(openDate) {
     const [machine] = ticked("machine");
     const cause = ticked("cause");
     const fix = ticked("fix");
+    if (!date) return toast("請填日期", true);
     if (!direct && !client) return toast("請勾選「直接客戶」或「客戶」並填名稱", true);
     if (!machine) return toast("請勾選並填「機台名稱」", true);
     if (!fix.length) return toast("請至少填一項「維修內容」", true);
@@ -1413,7 +1454,7 @@ async function viewRepairs(openDate) {
       folder,
     };
     let logLine = null;
-    if (f.start.value && f.end.value) {
+    if (!old && f.start.value && f.end.value) {
       const mins = minutesBetween(f.start.value, f.end.value);
       const who = owner ? `${owner}${machine}維修（${rec.customer}）` : `${rec.customer}${machine}維修`;
       logLine = buildEntryLine({
@@ -1427,12 +1468,21 @@ async function viewRepairs(openDate) {
     const btn = f.querySelector("button[type=submit]");
     btn.disabled = true;
     try {
-      await save({ kind: "repair", date, rec });
-      if (logLine) await writeLog(date, { a: "add", line: logLine });
-      toast(logLine ? "維修紀錄和日誌都已儲存" : "維修紀錄已儲存");
-      repairQuery = "";
-      location.hash = "#/repairs";
-      if (!openDate) viewRepairs();
+      if (!old) {
+        await save({ kind: "repair", date, rec });
+        if (logLine) await writeLog(date, { a: "add", line: logLine });
+        toast(logLine ? "維修紀錄和日誌都已儲存" : "維修紀錄已儲存");
+      } else {
+        const key = { date: old.date, customer: old.customer, machine: old.machine };
+        if (repairPath(old.date) === repairPath(date)) {
+          await save({ kind: "repair", date, rec, old: key });
+        } else {
+          await save({ kind: "repair", date: old.date, rec: null, old: key });
+          await save({ kind: "repair", date, rec });
+        }
+        toast("維修紀錄已修改");
+      }
+      done();
     } catch (e) {
       toast(errorText(e), true);
       btn.disabled = false;

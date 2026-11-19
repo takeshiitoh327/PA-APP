@@ -470,3 +470,5 @@ h3.sub { font-size: .9rem; margin: 14px 0 6px; color: var(--muted, #999); font-w
 .est-inputs-list small { color: var(--muted); white-space: nowrap; }
 .est-table tr.est-total { border-top: 2px solid var(--text-2); }
 .est-table tr.est-total th, .est-table tr.est-total td { font-weight: 700; font-size: 1rem; }
+.repair-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.repair.editing .form-actions { display: flex; gap: 8px; justify-content: flex-end; }
