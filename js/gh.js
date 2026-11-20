@@ -102,11 +102,15 @@ export class Repo {
     return info;
   }
 
-  // Returns { text, sha } or null when the file does not exist.
+  // Returns { text, sha } or null when the file does not exist. GitHub can
+  // serve the copy from before this phone's last write for a while, so when
+  // it does, the text this app wrote is returned instead.
   async getFile(path) {
     const data = await this.request("GET", `/contents/${encodePath(path)}?ref=${encodeURIComponent(this.branch)}`);
-    if (!data) return null;
-    return { text: decodeBase64(data.content), sha: data.sha };
+    const got = data ? { text: decodeBase64(data.content), sha: data.sha } : null;
+    const mine = recentWrites().get(path);
+    if (mine && (got ? got.sha : null) === mine.before) return { text: mine.text, sha: mine.sha };
+    return got;
   }
 
   async listDir(path) {
@@ -127,16 +131,13 @@ export class Repo {
   // seconds after a write, so the copy this app just wrote is remembered and
   // used instead, and a conflict is retried a few times with a short wait.
   async updateFile(path, transform, message) {
-    this.written = this.written || new Map();
     for (let attempt = 0; ; attempt++) {
-      let current = await this.getFile(path);
-      const mine = this.written.get(path);
-      if (mine && current && current.sha === mine.before) current = { text: mine.text, sha: mine.sha };
+      const current = await this.getFile(path);
       const next = transform(current ? current.text : null);
       if (current && next === current.text) return;
       try {
         const res = await this.putFile(path, next, current && current.sha, message);
-        if (res && res.content && res.content.sha) this.written.set(path, { before: current && current.sha, sha: res.content.sha, text: next });
+        if (res && res.content && res.content.sha) rememberWrite(path, { before: current ? current.sha : null, sha: res.content.sha, text: next });
         return;
       } catch (e) {
         if (attempt < 3 && (e.status === 409 || e.status === 422)) {
@@ -147,4 +148,24 @@ export class Repo {
       }
     }
   }
+}
+
+// Files this phone wrote in the last 15 minutes: { before, sha, text }. Kept
+// in localStorage so a reload right after saving still shows the new text.
+const WRITES_KEY = "pa-app.recent-writes";
+const WRITES_TTL = 15 * 60 * 1000;
+function recentWrites() {
+  try {
+    const all = JSON.parse(localStorage.getItem(WRITES_KEY) || "{}");
+    return new Map(Object.entries(all).filter(([, w]) => Date.now() - w.at < WRITES_TTL));
+  } catch {
+    return new Map();
+  }
+}
+function rememberWrite(path, w) {
+  const m = recentWrites();
+  m.set(path, { ...w, at: Date.now() });
+  try {
+    localStorage.setItem(WRITES_KEY, JSON.stringify(Object.fromEntries(m)));
+  } catch {}
 }
