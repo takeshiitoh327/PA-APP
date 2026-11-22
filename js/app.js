@@ -26,7 +26,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { probeHosts, todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting, cwaKey, saveCwaKey } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.80";
+const APP_VERSION = "V0.81";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -274,8 +274,10 @@ function updateOutboxButton() {
 }
 
 async function viewOutbox() {
+  const seq = routeSeq;
   titleEl.textContent = "待上傳";
   const ops = outbox.list();
+  if (seq !== routeSeq) return; // the user moved on while this page was loading
   view.innerHTML = `<section class="card">
     <h2>⏳ 待上傳 ${ops.length} 筆</h2>
     <p class="muted">沒有網路時存的紀錄先放在這支手機，恢復連線或打開 app 時會自動依序上傳到 GitHub。</p>
@@ -327,7 +329,12 @@ const routes = {
   settings: viewSettings,
 };
 
+// Bumped on every navigation. A page that finishes loading after the user
+// has moved on must not draw over the newer page.
+let routeSeq = 0;
+
 async function route() {
+  routeSeq++;
   const [, name = "today", arg] = location.hash.split("/");
   const handler = routes[name] || viewToday;
   document.querySelectorAll("nav.tabs a").forEach((a) => a.classList.toggle("active", a.dataset.tab === (name === "brief" || name === "review" ? "today" : name === "projects" ? "stats" : name)));
@@ -419,6 +426,7 @@ function minutesBetween(a, b) {
 }
 
 async function viewToday(date, focus) {
+  const seq = routeSeq;
   date = date || todayTaipei();
   titleEl.textContent = "今天";
   loading();
@@ -434,6 +442,7 @@ async function viewToday(date, focus) {
   const plans = openCommitments(all.entries, date);
   const isToday = date === todayTaipei();
 
+  if (seq !== routeSeq) return; // the user moved on while this page was loading
   view.innerHTML = `${dateNav(date, "today")}
   ${
     isToday
@@ -599,6 +608,7 @@ function searchResults(entries, query) {
 }
 
 async function viewLog(date) {
+  const seq = routeSeq;
   date = date || todayTaipei();
   titleEl.textContent = "日誌";
   loading();
@@ -613,6 +623,7 @@ async function viewLog(date) {
 
   const recent = recentWork(all.entries);
 
+  if (seq !== routeSeq) return; // the user moved on while this page was loading
   view.innerHTML = `${dateNav(date, "log")}
   <section class="card" id="search-card">
     <label class="search">🔍 搜尋所有日誌（內容、專案、標籤、階段）<input type="search" id="log-q" value="${esc(logQuery)}" placeholder="例如 迎廣 現場測試、程式" autocomplete="off"></label>
@@ -1030,6 +1041,7 @@ function brushReminder(entries, today) {
 }
 
 async function viewHealth() {
+  const seq = routeSeq;
   titleEl.textContent = "健康";
   loading();
   const { entries } = await allLogs();
@@ -1038,6 +1050,7 @@ async function viewHealth() {
   const last = changes[0];
   const used = last ? daysBetween(last.date, today) : null;
   const left = last ? BRUSH_DAYS - used : null;
+  if (seq !== routeSeq) return; // the user moved on while this page was loading
   view.innerHTML = `
   <section class="card" id="brush-card">
     <h2>🪥 電動牙刷刷頭</h2>
@@ -1101,6 +1114,7 @@ async function viewHealth() {
 }
 
 async function viewDoms(date) {
+  const seq = routeSeq;
   date = date || todayTaipei();
   titleEl.textContent = "肌肉痠痛";
   loading();
@@ -1138,6 +1152,7 @@ async function viewDoms(date) {
       : `<span class="muted">點圖上的肌肉：點一下「輕」，再點「中」、「重」，第四下取消。</span>`;
   };
 
+  if (seq !== routeSeq) return; // the user moved on while this page was loading
   view.innerHTML = `${dateNav(date, "doms")}
   <section class="card doms-card">
     <div class="segmented" id="doms-sides"><button type="button" data-side="front">正面</button><button type="button" data-side="back">背面</button></div>
@@ -1339,6 +1354,7 @@ function repairCard(x, i) {
 }
 
 async function viewRepairs(openDate) {
+  const seq = routeSeq;
   titleEl.textContent = "維修紀錄";
   loading();
   const list = await allRepairs();
@@ -1353,6 +1369,7 @@ async function viewRepairs(openDate) {
       ? hits.map((x, i) => repairCard(x, i)).join("")
       : `<section class="card"><p class="muted">${q ? "找不到符合的維修紀錄。" : "還沒有維修紀錄，按上面的「＋ 新增維修紀錄」。"}</p></section>`;
   };
+  if (seq !== routeSeq) return; // the user moved on while this page was loading
   view.innerHTML = `<section class="card">
     <details id="repair-new" ${openDate ? "open" : ""}>
       <summary class="new-summary">＋ 新增維修紀錄</summary>
@@ -1504,6 +1521,7 @@ function statsSwitch(on) {
 let projectRange = "all";
 
 async function viewProjects() {
+  const seq = routeSeq;
   titleEl.textContent = "專案工時";
   loading();
   const [{ entries }, estText] = await Promise.all([allLogs(), getText(ESTIMATE_PATH).catch(() => null)]);
@@ -1514,6 +1532,7 @@ async function viewProjects() {
   const ranges = [["month", "本月"], ["year", "今年"], ["all", "全部"]];
   const phaseLabel = Object.fromEntries(PHASES);
   const md = (d) => d.slice(5).replace("-", "/");
+  if (seq !== routeSeq) return; // the user moved on while this page was loading
   view.innerHTML = `${statsSwitch("projects")}
   <div class="segmented">${ranges.map(([k, l]) => `<button class="${projectRange === k ? "on" : ""}" data-prange="${k}">${l}</button>`).join("")}</div>
   <p class="range-label muted">專案共 ${fmtH(s.total)}（${PHASE_GROUPS.map(([g, gl]) => `${gl} ${fmtH(
@@ -1704,6 +1723,7 @@ function estimateBlock(name, list) {
 }
 
 async function viewStats() {
+  const seq = routeSeq;
   titleEl.textContent = "統計";
   loading();
   const { days, entries } = await allLogs();
@@ -1731,6 +1751,7 @@ async function viewStats() {
   };
   const c = s.commitments;
 
+  if (seq !== routeSeq) return; // the user moved on while this page was loading
   view.innerHTML = `${statsSwitch("stats")}
   <div class="segmented" role="tablist">${ranges
     .map(([k, l]) => `<button class="${statsRange.kind === k ? "on" : ""}" data-range="${k}">${l}</button>`)
@@ -1942,6 +1963,7 @@ function bindTips(root) {
 // ---------- settings ----------
 
 async function viewSettings(_, firstRun) {
+  const seq = routeSeq;
   titleEl.textContent = "設定";
   const gh = `
   <section class="card">
@@ -1963,6 +1985,7 @@ async function viewSettings(_, firstRun) {
     </form>
   </section>
 `;
+  if (seq !== routeSeq) return; // the user moved on while this page was loading
   view.innerHTML = `
   <section class="card version-card"><span class="muted">app 版本</span><strong>${APP_VERSION}</strong></section>
   ${firstRun ? `<section class="card notice"><h2>第一次使用</h2><p>這個 app 直接讀寫你的私人 repo。請先貼上 GitHub token，資料只存在這支手機的瀏覽器裡。</p></section>` : ""}

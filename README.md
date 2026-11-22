@@ -15,8 +15,12 @@ A small PWA front end for a private `personal-assistant` repo: today's morning b
 
 Reads and writes `logs/YYYY-MM.md` in the format the `/log` skill uses (`- HH:MM · category · duration · text #tag [metric=value]`). `js/stats.js` mirrors `scripts/log_stats.py` so both report the same numbers.
 
+## Tests
+
+`node tests/run.mjs` runs property checks on the file formats and end-to-end checks that drive the app in Chromium (Playwright) against a fake GitHub API. Run it before every push; see `.claude/skills/verify/SKILL.md`.
+
 ## Deploy
 
-GitHub Pages, branch `main`, folder `/`. No build step. Bump `VERSION` in `sw.js` when changing files so phones pick up the update.
+GitHub Pages, branch `main`, folder `/`. No build step. Bump `VERSION` in `sw.js` and `APP_VERSION` in `js/app.js` when changing files so phones pick up the update.
 
 Vendored: [marked](https://github.com/markedjs/marked) 12.0.2 (MIT) and [DOMPurify](https://github.com/cure53/DOMPurify) 3.1.6 (Apache-2.0 / MPL-2.0); licenses in `vendor/`.
