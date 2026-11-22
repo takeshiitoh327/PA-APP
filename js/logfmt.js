@@ -78,9 +78,9 @@ export const EXERCISES = [
   ["walk", "走路"],
   ["bike", "騎車"],
   ["gym", "重訓"],
-  ["swim", "游泳"],
-  ["ball", "球類"],
-  ["stretch", "伸展"],
+  ["basketball", "籃球"],
+  ["badminton", "羽球"],
+  ["pickleball", "匹克球"],
   ["other", "其他運動"],
 ];
 
