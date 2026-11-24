@@ -12,10 +12,12 @@
 //   { kind: "repair", date, rec, old }   (edit; old = {date, customer, machine})
 //   { kind: "repair", date, rec: null, old }   (edit that moved it to another month)
 //   { kind: "estimate", project, a: "add" | "delete", line }
+//   { kind: "status", project, date }   (date null = open again)
 
 import { addEntry, replaceEntry, setMood, setWeather } from "./logfmt.js";
 import { addRepair, removeRepair, replaceRepair, repairPath } from "./repairs.js";
 import { ESTIMATE_PATH, addInput, removeInput } from "./estimates.js";
+import { STATUS_PATH, setClosed } from "./projects.js";
 
 const KEY = "pa-app.outbox";
 const COPY_PREFIX = "pa-app.copy:";
@@ -52,6 +54,7 @@ export function count() {
 
 export function pathOf(op) {
   if (op.kind === "estimate") return ESTIMATE_PATH;
+  if (op.kind === "status") return STATUS_PATH;
   return op.kind === "repair" ? repairPath(op.date) : `logs/${op.date.slice(0, 7)}.md`;
 }
 
@@ -62,6 +65,7 @@ export function transformOf(op) {
     if (!op.rec) return (text) => removeRepair(text, op.old);
     return (text) => replaceRepair(text, op.old, op.rec);
   }
+  if (op.kind === "status") return (text) => setClosed(text, op.project, op.date);
   if (op.kind === "estimate") return (text) => (op.a === "delete" ? removeInput(text, op.line) : addInput(text, op.line));
   const d = op.date;
   if (op.a === "add") return (text) => addEntry(text, d, op.line);
@@ -74,6 +78,7 @@ export function transformOf(op) {
 export function messageOf(op) {
   if (op.kind === "repair") return `Repair: ${op.date} ${(op.rec || op.old).customer}${op.old ? " (edit)" : ""}`;
   if (op.kind === "estimate") return `Project hours: ${op.project}`;
+  if (op.kind === "status") return `Project ${op.date ? "closed" : "reopened"}: ${op.project}`;
   return op.a === "weather" ? `Weather: ${op.date}` : `Log: ${op.date}`;
 }
 
@@ -131,6 +136,7 @@ export function describe(op) {
     const r = op.rec || op.old;
     return `${op.old ? "✏️" : "🔧"} ${op.date} ${r.customer}・${r.machine}${op.old ? " 修改" : ""}`;
   }
+  if (op.kind === "status") return `🏁 ${op.project} ${op.date ? "結案" : "重新開啟"}`;
   if (op.kind === "estimate") return `🕒 ${op.project} 實際工時${op.a === "delete" ? " 刪除" : ""}`;
   if (op.a === "mood") return `😊 ${op.date} 心情 ${op.mood ?? "清除"}`;
   if (op.a === "weather") return `🌤️ ${op.date} 天氣`;

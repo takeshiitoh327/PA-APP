@@ -95,6 +95,31 @@ export default [
     }
   ),
 
+  flow("結案 and 重新開啟 buttons write projects/status.md and update the suggestions", async (app) => {
+    app.page.on("dialog", (d) => d.accept());
+    await app.goto("#/projects");
+    await app.page.locator("[data-prange=all]").click();
+    await app.page.waitForSelector("[data-project-status='測試專案A']");
+    eq(app.gh.files["projects/status.md"], undefined, "no status file before");
+    await app.page.click("[data-project-status='測試專案A']");
+    await waitPuts(app, 1);
+    const st = app.gh.files["projects/status.md"];
+    assert(st.startsWith("# Project status\n") && st.endsWith("\n- 測試專案A · closed 2026-11-04\n"), `new status file:\n${st}`);
+    await app.page.waitForSelector(".card.project:has-text('測試專案A') .pill.closed");
+
+    await app.goto("#/log/2026-11-04");
+    await app.page.waitForSelector("#entry-form");
+    eq(await app.page.locator("#project-names option").count(), 0, "closed project left the project list");
+
+    await app.goto("#/projects");
+    await app.page.locator("[data-prange=all]").click();
+    await app.page.click("[data-project-status='測試專案A'][data-open]");
+    await waitPuts(app, 2);
+    assert(!app.gh.files["projects/status.md"].includes("測試專案A"), "reopen removes the line");
+    await app.page.waitForSelector("[data-project-status='測試專案A']:not([data-open])");
+    eq(await app.page.locator(".pill.closed").count(), 0, "badge gone after reopening");
+  }),
+
   flow("work entry from the form is written in the log format", async (app) => {
     await app.goto("#/log/2026-11-04");
     await app.page.waitForSelector("#entry-form");

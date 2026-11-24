@@ -16,3 +16,23 @@ export function parseClosed(text) {
   }
   return out;
 }
+
+const HEADER = `# Project status
+
+Projects listed here are closed (format: \`- NAME · closed YYYY-MM-DD\`; the PWA reads it). Do not suggest them for new log entries, and ask before logging new work under one (warranty or follow-up work can still use the old project name).
+`;
+
+// Marks a project closed on `date`, or open again when date is null.
+// Other lines in the file are kept as they are.
+export function setClosed(text, project, date) {
+  const lines = (text || HEADER).replace(/\n*$/, "").split("\n");
+  const kept = lines.filter((l) => {
+    const m = CLOSED_RE.exec(l);
+    return !(m && m[1].trim() === project);
+  });
+  if (date) {
+    if (!kept.some((l) => l.startsWith("- "))) kept.push("");
+    kept.push(`- ${project} · closed ${date}`);
+  }
+  return kept.join("\n").replace(/\n{3,}/g, "\n\n") + "\n";
+}

@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ROOT, assert, eq } from "../harness.mjs";
 import { buildEntryLine, parseEntryLine, addEntry, replaceEntry, parseMonth, setMood, formatDuration, parseDuration, EXERCISES } from "../../js/logfmt.js";
-import { parseClosed } from "../../js/projects.js";
+import { parseClosed, setClosed } from "../../js/projects.js";
 import { addRepair, removeRepair, replaceRepair, parseRepairs, buildRepair, FIELDS } from "../../js/repairs.js";
 
 const RUNS = 300;
@@ -77,6 +77,20 @@ export default [
       eq(parseClosed(null).size, 0, "missing file");
     },
   },
+  property("closed projects: close, reopen and close twice keep the file well-formed", (r) => {
+    let file = r() < 0.3 ? null : "# Project status\n\nNote line.\n";
+    const names = ["迎廣50T", "Proj-B", "測試 機台", "a.b-c"];
+    for (const n of names) if (r() < 0.5) file = setClosed(file, n, date(r));
+    const base = setClosed(file, "X", null);
+    const n = pick(r, names);
+    const d = date(r);
+    const closed = setClosed(base, n, d);
+    eq(parseClosed(closed).get(n), d, "closed date");
+    eq(setClosed(closed, n, d), closed, "closing twice changed the file");
+    eq(parseClosed(setClosed(closed, n, null)).has(n), false, "reopened");
+    for (const [k, v] of parseClosed(base)) if (k !== n) eq(parseClosed(closed).get(k), v, "other projects untouched");
+    assert(!/\n\n\n/.test(closed) && closed.endsWith("\n") && !closed.endsWith("\n\n"), "blank lines");
+  }),
   {
     name: "every exercise type has a unique ASCII tag and a label",
     run() {

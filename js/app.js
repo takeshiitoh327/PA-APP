@@ -27,7 +27,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { probeHosts, todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting, cwaKey, saveCwaKey } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.82";
+const APP_VERSION = "V0.83";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -208,6 +208,7 @@ async function allLogs() {
 function forget(op) {
   if (op.kind === "repair") cache.repairs = null;
   else if (op.kind === "estimate") cache.files.delete(ESTIMATE_PATH);
+  else if (op.kind === "status") cache.files.delete(STATUS_PATH);
   else {
     cache.months.delete(op.date.slice(0, 7));
     cache.monthList = null;
@@ -1596,9 +1597,13 @@ async function viewProjects() {
             return `<section class="card project">
       <div class="card-head"><h2>${esc(p.name)}${closed.has(p.name) ? `<span class="pill closed">已結案 ${md(closed.get(p.name))}</span>` : ""}</h2><strong class="project-total">${fmtH(p.hours)}</strong></div>
       ${estimateBlock(p.name, estimates.get(p.name))}
-      <p class="muted project-span">${p.first === p.last ? md(p.first) : `${md(p.first)} – ${md(p.last)}`}・${p.entries.length} 筆${
+      <div class="project-meta"><p class="muted project-span">${p.first === p.last ? md(p.first) : `${md(p.first)} – ${md(p.last)}`}・${p.entries.length} 筆${
         p.personHours - p.hours > 0.01 ? `・👥 人工時 ${fmtH(p.personHours)}` : ""
-      }</p>
+      }</p>${
+        closed.has(p.name)
+          ? `<button type="button" class="btn small" data-project-status="${esc(p.name)}" data-open="1">↩️ 重新開啟</button>`
+          : `<button type="button" class="btn small" data-project-status="${esc(p.name)}">🏁 結案</button>`
+      }</div>
       <p class="group-split">${PHASE_GROUPS.map(([g, gl]) => `${gl} <strong>${fmtH(rows.filter(([k]) => PHASE_GROUP[k] === g).reduce((a, [k]) => a + p.phases[k], 0))}</strong>`).join("・")}</p>
       ${PHASE_GROUPS.map(([g, gl]) => {
         const gRows = rows.filter(([k]) => PHASE_GROUP[k] === g);
@@ -1656,6 +1661,27 @@ async function viewProjects() {
     }
   };
   view.querySelectorAll(".project").forEach((card) => card.addEventListener("click", onCrew));
+
+  // Close a project (it leaves the log form's suggestions) or open it again.
+  view.querySelectorAll("[data-project-status]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const project = b.dataset.projectStatus;
+      const reopen = !!b.dataset.open;
+      const ask = reopen
+        ? `重新開啟「${project}」？它會再出現在日誌的專案建議裡。`
+        : `把「${project}」結案？工時都會保留，只是日誌不再建議這個專案。`;
+      if (!confirm(ask)) return;
+      b.disabled = true;
+      try {
+        await save({ kind: "status", project, date: reopen ? null : todayTaipei() });
+        toast(reopen ? `${project} 已重新開啟` : `${project} 已結案`);
+        await viewProjects();
+      } catch (e) {
+        toast(errorText(e), true);
+        b.disabled = false;
+      }
+    })
+  );
 
   // Hand-entered hours: open the form, add an input, delete one.
   view.querySelectorAll(".estimate").forEach((box) => {
