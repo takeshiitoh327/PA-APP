@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ROOT, assert, eq } from "../harness.mjs";
 import { buildEntryLine, parseEntryLine, addEntry, replaceEntry, parseMonth, setMood, formatDuration, parseDuration, EXERCISES } from "../../js/logfmt.js";
+import { parseClosed } from "../../js/projects.js";
 import { addRepair, removeRepair, replaceRepair, parseRepairs, buildRepair, FIELDS } from "../../js/repairs.js";
 
 const RUNS = 300;
@@ -57,6 +58,23 @@ export default [
       const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8").match(/VERSION = "pa-app-(V[\d.]+)"/);
       assert(app && sw, "version strings not found");
       eq(sw[1], app[1], "bump both js/app.js APP_VERSION and sw.js VERSION");
+    },
+  },
+  {
+    name: "service worker caches every app module (else the app breaks offline)",
+    run() {
+      const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
+      const js = fs.readdirSync(path.join(ROOT, "js")).filter((f) => f.endsWith(".js"));
+      const missing = js.filter((f) => !sw.includes(`"js/${f}"`));
+      eq(missing, [], "add these to SHELL in sw.js");
+    },
+  },
+  {
+    name: "closed projects: status lines parse, other lines are ignored",
+    run() {
+      const m = parseClosed("# Project status\n\nSome note.\n- 迎廣50T · closed 2026-11-24\n- Proj-B · closed 2026-12-01 \n- 半句 · closed\n");
+      eq([...m], [["迎廣50T", "2026-11-24"], ["Proj-B", "2026-12-01"]], "parsed");
+      eq(parseClosed(null).size, 0, "missing file");
     },
   },
   {

@@ -20,13 +20,14 @@ import {
   formatDuration,
 } from "./logfmt.js";
 import * as outbox from "./outbox.js";
+import { STATUS_PATH, parseClosed } from "./projects.js";
 import { ESTIMATE_PATH, ESTIMATE_FIELDS, parseEstimates, estimateTotal, sumInputs, inputLine } from "./estimates.js";
 import { MUSCLES, FRONT, BACK } from "./muscles.js";
 import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./repairs.js";
 import { probeHosts, todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting, cwaKey, saveCwaKey } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.81";
+const APP_VERSION = "V0.82";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -113,6 +114,12 @@ async function getText(path) {
   const text = await cache.files.get(path);
   if (text === null) cache.files.delete(path);
   return text;
+}
+
+// Projects marked closed in projects/status.md (none if the file is missing
+// or cannot be read: hiding nothing is the safe default).
+async function closedProjects() {
+  return parseClosed(outbox.overlay(STATUS_PATH, await getText(STATUS_PATH).catch(() => null)));
 }
 
 // Set when a request fails for lack of network, so the next minute of
@@ -612,7 +619,7 @@ async function viewLog(date) {
   date = date || todayTaipei();
   titleEl.textContent = "日誌";
   loading();
-  const [month, all] = await Promise.all([getMonth(date.slice(0, 7)), allLogs()]);
+  const [month, all, closed] = await Promise.all([getMonth(date.slice(0, 7)), allLogs(), closedProjects()]);
   const day = month.days.get(date);
   const entries = day ? day.entries : [];
 
@@ -621,7 +628,7 @@ async function viewLog(date) {
   const recentTags = Object.entries(tagCount).sort((a, b) => b[1] - a[1]).slice(0, 16).map(([t]) => t);
   const metricNames = [...new Set(all.entries.flatMap((e) => Object.keys(e.metrics)))].filter((k) => k !== "sleep_q");
 
-  const recent = recentWork(all.entries);
+  const recent = recentWork(all.entries.filter((e) => !closed.has(e.project)));
 
   if (seq !== routeSeq) return; // the user moved on while this page was loading
   view.innerHTML = `${dateNav(date, "log")}
@@ -695,8 +702,8 @@ async function viewLog(date) {
       </label>
       <label>內容<textarea name="text" rows="2" required placeholder="例如：製作控制盤，兩盤"></textarea></label>
       <div id="project-row">
-        <label>專案（不含維修）<input type="text" name="project" list="project-names" placeholder="例如 迎廣50T"></label>
-        <datalist id="project-names">${[...new Set(all.entries.map((e) => e.project).filter(Boolean))].map((p) => `<option value="${esc(p)}">`).join("")}</datalist>
+        <label>專案（不含維修）<input type="text" name="project" list="project-names" placeholder="例如 客戶＋機台"></label>
+        <datalist id="project-names">${[...new Set(all.entries.map((e) => e.project).filter((p) => p && !closed.has(p)))].map((p) => `<option value="${esc(p)}">`).join("")}</datalist>
         <div class="chips" id="phase-chips">${PHASES.map(([v, l]) => `<button type="button" class="chip" data-phase="${v}">${l}</button>`).join("")}</div>
         <div id="crew-row" hidden><span class="muted crew-label">人數（算人工時）</span>
           <div class="chips">${[1, 2, 3].map((n) => `<button type="button" class="chip" data-crew="${n}">${n} 人</button>`).join("")}</div>
@@ -1118,7 +1125,7 @@ async function viewDoms(date) {
   date = date || todayTaipei();
   titleEl.textContent = "肌肉痠痛";
   loading();
-  const [month, all] = await Promise.all([getMonth(date.slice(0, 7)), allLogs()]);
+  const [month, all, closed] = await Promise.all([getMonth(date.slice(0, 7)), allLogs(), closedProjects()]);
   const day = month.days.get(date);
   const existing = day ? day.entries.find((e) => e.tags.includes("doms")) : null;
   const levels = existing ? domsOf(existing) : {};
@@ -1524,11 +1531,13 @@ async function viewProjects() {
   const seq = routeSeq;
   titleEl.textContent = "專案工時";
   loading();
-  const [{ entries }, estText] = await Promise.all([allLogs(), getText(ESTIMATE_PATH).catch(() => null)]);
+  const [{ entries }, estText, closed] = await Promise.all([allLogs(), getText(ESTIMATE_PATH).catch(() => null), closedProjects()]);
   const estimates = parseEstimates(outbox.overlay(ESTIMATE_PATH, estText));
   const today = todayTaipei();
   const [start, end] = projectRange === "all" ? ["0000-01-01", "9999-12-31"] : resolveRange(projectRange, today);
   const s = projectSummary(entries, start, end, PHASES);
+  // Open projects first; closed ones keep their hours but move to the end.
+  s.list.sort((a, b) => closed.has(a.name) - closed.has(b.name));
   const ranges = [["month", "本月"], ["year", "今年"], ["all", "全部"]];
   const phaseLabel = Object.fromEntries(PHASES);
   const md = (d) => d.slice(5).replace("-", "/");
@@ -1585,7 +1594,7 @@ async function viewProjects() {
           </div></details>`;
             };
             return `<section class="card project">
-      <div class="card-head"><h2>${esc(p.name)}</h2><strong class="project-total">${fmtH(p.hours)}</strong></div>
+      <div class="card-head"><h2>${esc(p.name)}${closed.has(p.name) ? `<span class="pill closed">已結案 ${md(closed.get(p.name))}</span>` : ""}</h2><strong class="project-total">${fmtH(p.hours)}</strong></div>
       ${estimateBlock(p.name, estimates.get(p.name))}
       <p class="muted project-span">${p.first === p.last ? md(p.first) : `${md(p.first)} – ${md(p.last)}`}・${p.entries.length} 筆${
         p.personHours - p.hours > 0.01 ? `・👥 人工時 ${fmtH(p.personHours)}` : ""

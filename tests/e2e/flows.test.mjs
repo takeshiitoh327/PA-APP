@@ -69,6 +69,32 @@ export default [
     assert(await app.page.locator("#entry-form").count(), "the today page replaced the log page after it");
   }),
 
+  flow(
+    "closed projects drop out of the log form's suggestions but keep their hours",
+    async (app) => {
+      await app.goto("#/log/2026-11-04");
+      await app.page.waitForSelector("#entry-form");
+      const chips = await app.page.locator("#recent-chips .chip").allTextContents();
+      assert(chips.length && !chips.some((c) => c.includes("測試專案A")), `recent work still offers the closed project: ${chips}`);
+      assert(chips.some((c) => c.includes("測試專案B")), `open project missing from recent work: ${chips}`);
+      eq(await app.page.locator("#project-names option").evaluateAll((o) => o.map((x) => x.value)), ["測試專案B"], "project list offers only open projects");
+
+      await app.goto("#/projects");
+      await app.page.locator("[data-prange=all]").click();
+      await app.page.waitForSelector(".card.project h2");
+      const heads = (await app.page.locator(".card.project h2").allTextContents()).filter((h) => h !== "未歸類的工作");
+      eq(heads, ["測試專案B", "測試專案A已結案 11/24"], "closed project listed last with its badge");
+      assert((await app.page.locator(".card.project", { hasText: "測試專案A" }).locator(".project-total").innerText()).trim() !== "", "closed project keeps its hours");
+    },
+    {
+      files: {
+        ...FIXTURES,
+        "logs/2026-11.md": FIXTURES["logs/2026-11.md"] + "- 19:00 · work · 1h · 程式 @測試專案B #program\n",
+        "projects/status.md": "# Project status\n\n- 測試專案A · closed 2026-11-24\n",
+      },
+    }
+  ),
+
   flow("work entry from the form is written in the log format", async (app) => {
     await app.goto("#/log/2026-11-04");
     await app.page.waitForSelector("#entry-form");
