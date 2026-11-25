@@ -27,7 +27,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { probeHosts, todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting, cwaKey, saveCwaKey } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.83";
+const APP_VERSION = "V0.84";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -1288,7 +1288,7 @@ function checkRow(name, label, value = "", placeholder = "") {
 }
 
 // The repair form. With rec it is the edit form for that record.
-function repairFormHtml(date, rec = null) {
+function repairFormHtml(date, rec = null, log = null) {
   const r = rec || {};
   const rows = (name, ph) => {
     const vals = String(r[name] || "").split("；").map((v) => v.trim()).filter(Boolean);
@@ -1314,22 +1314,20 @@ function repairFormHtml(date, rec = null) {
     <ul class="checklist" data-list="fix">${rows("fix", "例如 更換 PLC FBs-24MAR2-AC")}</ul>
     <button type="button" class="btn small" data-add="fix">＋ 再加一項維修內容</button>
     <details class="more" ${rec ? "open" : ""}>
-      <summary>更多欄位（地點、年份、零件、雲端資料夾${rec ? "" : "、工時"}）</summary>
+      <summary>更多欄位（地點、年份、零件、雲端資料夾、工時）</summary>
       <label>地點<input type="text" name="place" list="dl-place" value="${v("place")}" placeholder="例如 南投市南崗工業區"></label>
       <label>年份<input type="text" name="year" value="${v("year")}" placeholder="西元年，例如 2014、未知"></label>
       <label>製造（機台／電控）<input type="text" name="build" value="${v("build")}" placeholder="例如 機台 田豐；電控 中信"></label>
       <label>故障現象<input type="text" name="symptom" value="${v("symptom")}"></label>
       <label>更換零件（用「；」分開）<input type="text" name="parts" value="${v("parts")}" placeholder="例如 FBs-24MAR2-AC；CU-11 380V"></label>
       <label>雲端資料夾連結<input type="url" name="folder" inputmode="url" value="${v("folder")}" placeholder="https://drive.google.com/drive/folders/…"></label>
-      ${
-        rec
-          ? ""
-          : `<p class="muted hint">工時（填了才會同時記一筆日誌）</p>
+      <p class="muted hint">${
+        log ? "工時（改了會同時修改日誌裡那一筆）" : rec ? "工時（找不到對應的日誌；填了會新增一筆）" : "工時（填了才會同時記一筆日誌）"
+      }</p>
       <div class="row">
-        <label>開始<input type="time" name="start"></label>
-        <label>結束<input type="time" name="end"></label>
-      </div>`
-      }
+        <label>開始<input type="time" name="start" value="${log ? esc(log.time) : ""}"></label>
+        <label>結束<input type="time" name="end" value="${log ? esc(endTime(log.time, log.hours) || "") : ""}"></label>
+      </div>
     </details>
     ${rec ? "" : ["direct", "client", "owner", "machine", "place"].map((k) => `<datalist id="dl-${k}"></datalist>`).join("")}
     <div class="form-actions">
@@ -1414,22 +1412,45 @@ async function viewRepairs(openDate) {
   };
   wireRepairForm(document.getElementById("repair-form"), null, after);
 
-  document.getElementById("repair-list").addEventListener("click", (ev) => {
+  document.getElementById("repair-list").addEventListener("click", async (ev) => {
     const btn = ev.target.closest("[data-edit]");
     if (!btn) return;
     const x = hits[+btn.dataset.edit];
     const card = btn.closest(".card");
+    btn.disabled = true;
+    // The work log entry written for this repair, so its time can be edited too.
+    let log = null;
+    try {
+      const day = (await getMonth(x.date.slice(0, 7))).days.get(x.date);
+      log = repairLogEntry(day ? day.entries : [], x);
+    } catch {
+      // Without the log the record can still be edited; times then add a new entry.
+    }
     card.classList.add("editing");
-    card.innerHTML = `<div class="card-head"><h2>✏️ 修改維修紀錄</h2><span class="muted">${esc(x.date)}</span></div>${repairFormHtml(x.date, x)}`;
+    card.innerHTML = `<div class="card-head"><h2>✏️ 修改維修紀錄</h2><span class="muted">${esc(x.date)}</span></div>${repairFormHtml(x.date, x, log)}`;
     const f = card.querySelector("form");
     f.querySelector("[data-cancel]").addEventListener("click", render);
-    wireRepairForm(f, x, () => viewRepairs());
+    wireRepairForm(f, x, () => viewRepairs(), log);
     card.scrollIntoView({ block: "start", behavior: "smooth" });
   });
 }
 
+// The day's work entry that logs this repair: the one linking the same Drive
+// folder, else the only #repair entry tagged with its client (and owner)
+// that names the machine. Null when it is not clear which one it is.
+function repairLogEntry(entries, x) {
+  const reps = entries.filter((e) => e.category === "work" && e.tags.includes("repair"));
+  if (x.folder) {
+    const byFolder = reps.filter((e) => e.text.includes(x.folder));
+    if (byFolder.length === 1) return byFolder[0];
+  }
+  const want = [x.customer, x.owner].filter(Boolean).map((t) => normalizeTag(t).toLowerCase());
+  const hits = reps.filter((e) => want.every((t) => e.tags.includes(t)) && e.text.includes(x.machine));
+  return hits.length === 1 ? hits[0] : null;
+}
+
 // Checklist behaviour and saving for a new (old = null) or edited repair.
-function wireRepairForm(f, old, done) {
+function wireRepairForm(f, old, done, log = null) {
   f.addEventListener("input", (ev) => {
     const row = ev.target.closest(".check-row");
     if (row && ev.target.type === "text") row.querySelector(".check-box").checked = ev.target.value.trim() !== "";
@@ -1479,7 +1500,19 @@ function wireRepairForm(f, old, done) {
       folder,
     };
     let logLine = null;
-    if (!old && f.start.value && f.end.value) {
+    const timed = f.start.value && f.end.value;
+    if (timed && !minutesBetween(f.start.value, f.end.value)) return toast("開始和結束時間不能一樣", true);
+    // Edited repair with its log entry found: keep the entry's text, change
+    // only its time and length, and move it along when the date moves.
+    let logEdit = null;
+    if (old && log) {
+      const line = timed
+        ? `- ${f.start.value} · ${log.category} · ${formatDuration(minutesBetween(f.start.value, f.end.value) / 60)} · ${log.text}`
+        : log.line;
+      if (date !== old.date) logEdit = [{ date: old.date, a: "replace", old: log.line, line: null }, { date, a: "add", line }];
+      else if (line !== log.line) logEdit = [{ date, a: "replace", old: log.line, line }];
+    }
+    if ((!old || !log) && timed) {
       const mins = minutesBetween(f.start.value, f.end.value);
       const who = owner ? `${owner}${machine}維修（${rec.customer}）` : `${rec.customer}${machine}維修`;
       logLine = buildEntryLine({
@@ -1505,7 +1538,9 @@ function wireRepairForm(f, old, done) {
           await save({ kind: "repair", date: old.date, rec: null, old: key });
           await save({ kind: "repair", date, rec });
         }
-        toast("維修紀錄已修改");
+        for (const c of logEdit || []) await writeLog(c.date, c);
+        if (logLine) await writeLog(date, { a: "add", line: logLine });
+        toast(logEdit || logLine ? "維修紀錄和日誌都已修改" : "維修紀錄已修改");
       }
       done();
     } catch (e) {

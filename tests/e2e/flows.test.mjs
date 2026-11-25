@@ -8,10 +8,13 @@ const LOG = "logs/2026-11.md";
 const REPAIRS = "field/repairs/2026-11.md";
 
 // Runs fn with a fresh app and fails on any page error the check did not expect.
+let FILES = FIXTURES; // the files the running flow started with
+
 function flow(name, fn, opts) {
   return {
     name,
     async run(ctx) {
+      FILES = (opts && opts.files) || FIXTURES;
       const app = await start(opts);
       try {
         await fn(app);
@@ -170,6 +173,7 @@ export default [
     const before = app.gh.files[REPAIRS];
     await app.page.locator(".repair", { hasText: "測試公司甲" }).locator("[data-edit]").click();
     const f = app.page.locator(".repair.editing form");
+    await f.waitFor(); // the form opens after the day's log is read
     eq(await f.locator("[name=fix]").evaluateAll((e) => e.map((x) => x.value)), ["更換繼電器", "調整參數"], "edit form prefills each fix item");
     await f.locator("[name=symptom]").fill("測試現象");
     await f.locator("button[type=submit]").click();
@@ -191,6 +195,49 @@ export default [
     eq(await app.page.locator(".repair.editing").count(), 0, "cancel closes the edit form");
     eq(app.gh.puts.length, n + 3, "cancel writes nothing");
   }),
+
+  flow(
+    "repair edit shows the log entry's time and changing it updates that entry",
+    async (app) => {
+      const D = "https://drive.google.com/drive/folders/abc";
+      await app.goto("#/repairs");
+      await app.page.locator(".repair", { hasText: "測試公司甲" }).locator("[data-edit]").click();
+      const f = app.page.locator(".repair.editing form");
+      await f.waitFor();
+      eq([await f.locator("[name=start]").inputValue(), await f.locator("[name=end]").inputValue()], ["13:10", "14:20"], "prefilled from the log entry");
+      await f.locator("[name=start]").fill("13:00");
+      await f.locator("[name=end]").fill("15:30");
+      await f.locator("button[type=submit]").click();
+      await waitPuts(app, 2);
+      const d = lineDiff(FILES["logs/2026-11.md"], app.gh.files["logs/2026-11.md"]);
+      eq(d, {
+        added: [`- 13:00 · work · 2h30m · 機台維修（測試公司甲）：更換繼電器 ${D} #測試公司甲 #repair`],
+        removed: [`- 13:10 · work · 1h10m · 機台維修（測試公司甲）：更換繼電器 ${D} #測試公司甲 #repair`],
+      }, "only the time and length of the log entry change");
+      eq(lineDiff(FILES["field/repairs/2026-11.md"], app.gh.files["field/repairs/2026-11.md"]), { added: [], removed: [] }, "repair record unchanged");
+
+      // Moving the repair to another day moves its log entry too.
+      await app.page.waitForSelector(".repair [data-edit]");
+      await app.page.locator(".repair", { hasText: "測試公司甲" }).locator("[data-edit]").click();
+      await app.page.locator(".repair.editing [name=date]").fill("2026-11-03");
+      await app.page.locator(".repair.editing button[type=submit]").click();
+      await waitPuts(app, 4);
+      const log = app.gh.files["logs/2026-11.md"];
+      const day3 = log.split("## 2026-11-03")[1].split("## 2026-11-04")[0];
+      assert(day3.includes("- 13:00 · work · 2h30m · 機台維修（測試公司甲）"), `entry moved to 11/03:\n${day3}`);
+      assert(!log.split("## 2026-11-03")[0].includes("機台維修"), "entry left 11/02");
+    },
+    {
+      files: {
+        ...FIXTURES,
+        "logs/2026-11.md": FIXTURES["logs/2026-11.md"].replace(
+          "## 2026-11-03",
+          "## 2026-11-02 (Mon)\n- 13:10 · work · 1h10m · 機台維修（測試公司甲）：更換繼電器 https://drive.google.com/drive/folders/abc #測試公司甲 #repair\n\n## 2026-11-03"
+        ),
+        "field/repairs/2026-11.md": FIXTURES["field/repairs/2026-11.md"].replace("- 維修內容：", "- 資料夾：https://drive.google.com/drive/folders/abc\n- 維修內容："),
+      },
+    }
+  ),
 
   flow("offline: entries queue on the phone and upload when back online", async (app) => {
     await app.goto("#/log/2026-11-04");
