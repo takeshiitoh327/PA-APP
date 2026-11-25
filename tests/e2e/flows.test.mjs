@@ -239,6 +239,35 @@ export default [
     }
   ),
 
+  flow(
+    "repair edit rewrites its log entry's text when the repair, owner or folder changes",
+    async (app) => {
+      await app.goto("#/repairs");
+      await app.page.locator(".repair", { hasText: "測試公司甲" }).locator("[data-edit]").click();
+      const f = app.page.locator(".repair.editing form");
+      await f.waitFor();
+      await f.locator(".check-row:has([name=owner]) input[type=text]").fill("測試業主");
+      await f.locator("[name=fix]").first().fill("更換電磁閥");
+      await f.locator("[name=folder]").fill("https://drive.google.com/drive/folders/new");
+      await f.locator("button[type=submit]").click();
+      await waitPuts(app, 2);
+      eq(lineDiff(FILES["logs/2026-11.md"], app.gh.files["logs/2026-11.md"]), {
+        added: ["- 13:10 · work · 1h10m · 測試業主測試機台維修（測試公司甲）：更換電磁閥；調整參數 https://drive.google.com/drive/folders/new #測試公司甲 #測試業主 #repair #urgent [km=3]"],
+        removed: ["- 13:10 · work · 1h10m · 測試機台維修（測試公司甲）：更換繼電器 https://drive.google.com/drive/folders/abc #測試公司甲 #repair #urgent [km=3]"],
+      }, "text, owner tag and folder follow the repair; time, other tags and metrics stay");
+    },
+    {
+      files: {
+        ...FIXTURES,
+        "logs/2026-11.md": FIXTURES["logs/2026-11.md"].replace(
+          "## 2026-11-03",
+          "## 2026-11-02 (Mon)\n- 13:10 · work · 1h10m · 測試機台維修（測試公司甲）：更換繼電器 https://drive.google.com/drive/folders/abc #測試公司甲 #repair #urgent [km=3]\n\n## 2026-11-03"
+        ),
+        "field/repairs/2026-11.md": FIXTURES["field/repairs/2026-11.md"].replace("- 維修內容：", "- 資料夾：https://drive.google.com/drive/folders/abc\n- 維修內容："),
+      },
+    }
+  ),
+
   flow("offline: entries queue on the phone and upload when back online", async (app) => {
     await app.goto("#/log/2026-11-04");
     await app.page.waitForSelector("#entry-form");

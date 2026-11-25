@@ -27,7 +27,7 @@ import { FIELDS as REPAIR_FIELDS, parseRepairs, repairPath, addRepair } from "./
 import { probeHosts, todayWeather, savedWeather, isEvening, weatherLine, describe, locationPermission, diagnose, requestPositionNow, CITIES, placeSetting, savePlaceSetting, cwaKey, saveCwaKey } from "./weather.js";
 
 // Version shown to the user, V0.NN (V0.33 was v33).
-const APP_VERSION = "V0.84";
+const APP_VERSION = "V0.85";
 import { summarize, projectSummary, resolveRange, previousRange, openCommitments, addDays, daysBetween } from "./stats.js";
 import { pushSupported, currentSubscription, enablePush, disablePush, showLocalTest } from "./push.js";
 
@@ -1322,7 +1322,7 @@ function repairFormHtml(date, rec = null, log = null) {
       <label>更換零件（用「；」分開）<input type="text" name="parts" value="${v("parts")}" placeholder="例如 FBs-24MAR2-AC；CU-11 380V"></label>
       <label>雲端資料夾連結<input type="url" name="folder" inputmode="url" value="${v("folder")}" placeholder="https://drive.google.com/drive/folders/…"></label>
       <p class="muted hint">${
-        log ? "工時（改了會同時修改日誌裡那一筆）" : rec ? "工時（找不到對應的日誌；填了會新增一筆）" : "工時（填了才會同時記一筆日誌）"
+        log ? "工時（這筆維修的日誌會跟著更新：時間、內容、資料夾）" : rec ? "工時（找不到對應的日誌；填了會新增一筆）" : "工時（填了才會同時記一筆日誌）"
       }</p>
       <div class="row">
         <label>開始<input type="time" name="start" value="${log ? esc(log.time) : ""}"></label>
@@ -1449,6 +1449,16 @@ function repairLogEntry(entries, x) {
   return hits.length === 1 ? hits[0] : null;
 }
 
+// What a repair's work log entry says, e.g.
+//   志鋼TPCE-120維修（田豐）：更換PLC https://drive… #田豐 #志鋼 #repair
+function repairLogText(r) {
+  const who = r.owner ? `${r.owner}${r.machine}維修（${r.customer}）` : `${r.customer}${r.machine}維修`;
+  return `${who}：${r.fix}${r.folder ? " " + r.folder : ""}`;
+}
+function repairLogTags(r) {
+  return [...new Set([r.customer, r.owner].filter(Boolean).map(normalizeTag)), "repair"];
+}
+
 // Checklist behaviour and saving for a new (old = null) or edited repair.
 function wireRepairForm(f, old, done, log = null) {
   f.addEventListener("input", (ev) => {
@@ -1506,22 +1516,32 @@ function wireRepairForm(f, old, done, log = null) {
     // only its time and length, and move it along when the date moves.
     let logEdit = null;
     if (old && log) {
-      const line = timed
-        ? `- ${f.start.value} · ${log.category} · ${formatDuration(minutesBetween(f.start.value, f.end.value) / 60)} · ${log.text}`
-        : log.line;
+      const hours = timed ? minutesBetween(f.start.value, f.end.value) / 60 : log.hours;
+      const time = timed ? f.start.value : log.time;
+      // When what the log line says (who, machine, repair, folder) changed,
+      // write its text again; other tags and metrics on the line are kept.
+      const textChanged = ["customer", "owner", "machine", "fix", "folder"].some((k) => (old[k] || "") !== (rec[k] || ""));
+      let line = log.line;
+      if (textChanged) {
+        const dropped = new Set([old.customer, old.owner, "repair"].filter(Boolean).map((t) => normalizeTag(t).toLowerCase()));
+        const extra = log.tags.filter((t) => !dropped.has(t));
+        line = buildEntryLine({
+          time,
+          category: log.category,
+          hours,
+          text: repairLogText(rec),
+          tags: [...new Set([...repairLogTags(rec), ...extra])],
+          metrics: Object.entries(log.metrics),
+        });
+      } else if (timed) {
+        line = `- ${time} · ${log.category} · ${formatDuration(hours)} · ${log.text}`;
+      }
       if (date !== old.date) logEdit = [{ date: old.date, a: "replace", old: log.line, line: null }, { date, a: "add", line }];
       else if (line !== log.line) logEdit = [{ date, a: "replace", old: log.line, line }];
     }
     if ((!old || !log) && timed) {
       const mins = minutesBetween(f.start.value, f.end.value);
-      const who = owner ? `${owner}${machine}維修（${rec.customer}）` : `${rec.customer}${machine}維修`;
-      logLine = buildEntryLine({
-        time: f.start.value,
-        category: "work",
-        hours: mins / 60,
-        text: `${who}：${rec.fix}${folder ? " " + folder : ""}`,
-        tags: [...new Set([rec.customer, owner].filter(Boolean).map(normalizeTag)), "repair"],
-      });
+      logLine = buildEntryLine({ time: f.start.value, category: "work", hours: mins / 60, text: repairLogText(rec), tags: repairLogTags(rec) });
     }
     const btn = f.querySelector("button[type=submit]");
     btn.disabled = true;
